@@ -1972,7 +1972,9 @@
     const seconds=time*0.001;
     const playerPosition = buggyMode && havenBuggy
       ? havenBuggy.position
-      : (onFoot && playerAvatar ? playerAvatar.position : null);
+      : (onFoot && playerAvatar && planetWorld
+        ? planetWorld.worldToLocal(playerAvatar.position.clone())
+        : null);
 
     for(const creature of ambientFauna){
       if(creature.kind!=="mote"){
