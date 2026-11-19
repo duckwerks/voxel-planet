@@ -678,7 +678,7 @@
 
     // Ship starting location
 
-    group.position.set(0, 0, 100);
+    group.position.set(0, 0, -390);
 
     scene.add(group);
 
@@ -993,13 +993,13 @@
 
   function returnHome() {
     if (!ship || !camera || !planetCenter) return;
-    ship.position.set(0, 0, 100);
+    ship.position.set(0, 0, -390);
     ship.rotation.set(0, 0, 0);
     velocity.x = 0;
     velocity.y = 0;
     velocity.z = 0;
-    camera.position.set(0, 17, 145);
-    camera.lookAt(0, 0, 55);
+    camera.position.set(0, 17, -345);
+    camera.lookAt(0, 0, -435);
     clearKeys();
     setStatus("HOME POSITION RESTORED // HAVEN AHEAD");
   }
@@ -1271,7 +1271,7 @@
 
       // Initial camera
 
-      camera.position.set(0, 17, 145);
+      camera.position.set(0, 17, -345);
 
       camera.lookAt(ship.position);
 
