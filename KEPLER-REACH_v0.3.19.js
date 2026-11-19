@@ -1952,7 +1952,8 @@
     if (cameraButton) cameraButton.style.display = "none";
     if (mobile) mobile.style.display = "block";
     if (lookPad) lookPad.style.display = "grid";
-    if (disembarkButton) disembarkButton.style.display = "block";
+    // Disembark is only available after the next confirmed touchdown.
+    if (disembarkButton) disembarkButton.style.display = "none";
     if (landingButton) {
       landingButton.style.display = "block";
       landingButton.textContent = "INITIATE LANDING";
