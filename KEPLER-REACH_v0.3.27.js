@@ -2501,8 +2501,10 @@
     camera.up.copy(worldUp);
     if(cameraMode==="first"){
       const eye=worldPos.clone().addScaledVector(worldUp,2.15).addScaledVector(worldForward,0.25);
+      const viewForward=worldForward.clone().applyAxisAngle(worldUp,cameraYaw);
+      viewForward.addScaledVector(worldUp,Math.tan(cameraPitch-0.32)*0.65).normalize();
       camera.position.lerp(eye,1-Math.pow(0.00008,delta));
-      camera.lookAt(eye.clone().addScaledVector(worldForward,12));
+      camera.lookAt(eye.clone().addScaledVector(viewForward,12));
       if(cameraButton)cameraButton.textContent="VIEW: DRIVER POV";
     }else{
       const back=worldForward.clone().negate().applyAxisAngle(worldUp,cameraYaw);
