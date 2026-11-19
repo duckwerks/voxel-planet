@@ -1027,7 +1027,9 @@
       ambientFauna.push({
         group,
         kind,
-        baseY: group.position.y,
+        basePosition: group.position.clone(),
+        surfaceUp: frame.normal.clone(),
+        baseQuaternion: group.quaternion.clone(),
         phase: faunaRandom() * Math.PI * 2,
         amplitude: kind === "mote" ? 0.38 : 0.08,
         wings,
@@ -1754,12 +1756,18 @@
     const seconds = time * 0.001;
     for (const creature of ambientFauna) {
       const bob = Math.sin(seconds * (creature.kind === "mote" ? 2.1 : 1.15) + creature.phase);
-      creature.group.position.y = creature.baseY + bob * creature.amplitude;
+      creature.group.position.copy(creature.basePosition)
+        .addScaledVector(creature.surfaceUp, bob * creature.amplitude);
       if (creature.kind === "mote") {
         for (const wing of creature.wings) {
           wing.pivot.rotation.z = wing.side * (0.18 + Math.sin(seconds * 12 + creature.phase) * 0.58);
         }
-        creature.group.rotation.y += Math.sin(seconds * 0.7 + creature.phase) * 0.0007;
+        creature.group.quaternion.copy(creature.baseQuaternion).multiply(
+          new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            Math.sin(seconds * 0.7 + creature.phase) * 0.08
+          )
+        );
       } else {
         for (let i = 0; i < creature.legs.length; i++) {
           creature.legs[i].rotation.x = Math.sin(seconds * 3.2 + creature.phase + i * 1.4) * 0.12;
