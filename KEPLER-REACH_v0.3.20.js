@@ -184,7 +184,7 @@
 
   Object.assign(hud.style, {
     position: "absolute",
-    top: "66px",
+    top: "104px",
     left: "20px",
     zIndex: "10",
     color: "#f2e6c8",
