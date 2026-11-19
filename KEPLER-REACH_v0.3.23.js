@@ -168,27 +168,30 @@
 
   const navReadout = document.createElement("div");
   Object.assign(navReadout.style, {
-    order: "0", flex: "1 1 210px", minWidth: "170px",
-    boxSizing: "border-box", display: "flex", flexDirection: "column",
-    flexWrap: "nowrap", justifyContent: "flex-start", alignItems: "flex-start",
-    gap: "3px", padding: "5px 9px", margin: "0",
-    maxWidth: "100%", border: "1px solid rgba(129,178,190,.34)",
+    position: "absolute", top: "10px", left: "10px",
+    width: "calc(50% - 20px)", maxWidth: "520px",
+    boxSizing: "border-box", display: "flex", flexWrap: "wrap",
+    justifyContent: "flex-start", alignContent: "flex-start",
+    gap: "4px 12px", padding: "6px 9px",
+    border: "1px solid rgba(129,178,190,.34)",
     borderRadius: "5px", background: "rgba(5,15,25,.76)",
-    color: "#c5e1df", font: "10px/1.35 monospace",
+    color: "#c5e1df", font: "10px/1.4 monospace",
     letterSpacing: ".35px", textAlign: "left",
-    textShadow: "0 1px 4px #000", pointerEvents: "none"
+    textShadow: "0 1px 4px #000", pointerEvents: "none",
+    zIndex: "81"
   });
-  navReadout.innerHTML = '<span id="kr-nav-coords">HAVEN --</span><span id="kr-nav-heading">HDG --</span><span id="kr-nav-ship">SHIP --</span>';
-  topActionBar.appendChild(navReadout);
+  navReadout.innerHTML = '<span id="kr-nav-coords">HAVEN --</span><span id="kr-nav-heading">HDG --</span><span id="kr-nav-ship" style="flex:1 0 100%">SHIP --</span>';
+  root.appendChild(navReadout);
 
   const actionButtons = document.createElement("div");
   Object.assign(actionButtons.style, {
-    order: "1", flex: "0 1 auto", display: "flex",
-    flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end",
-    alignItems: "center", gap: "6px", marginLeft: "auto",
-    maxWidth: "100%", pointerEvents: "none"
+    position: "absolute", top: "10px", right: "10px",
+    width: "calc(50% - 20px)", maxWidth: "700px",
+    display: "flex", flexDirection: "row", flexWrap: "wrap",
+    justifyContent: "flex-end", alignItems: "flex-start",
+    alignContent: "flex-start", gap: "6px", pointerEvents: "none"
   });
-  topActionBar.appendChild(actionButtons);
+  root.appendChild(actionButtons);
 
   const modeHint = document.createElement("div");
   Object.assign(modeHint.style, {
@@ -2700,7 +2703,7 @@
     const lon = Math.atan2(local.z, local.x) * 180 / Math.PI;
     const nearHaven = Math.abs(radius - CONFIG.planetRadius) < 900;
     const coords = nearHaven
-      ? "LAT " + lat.toFixed(3) + "°  LON " + lon.toFixed(3) + "°"
+      ? "LAT " + lat.toFixed(4) + "°  LON " + lon.toFixed(4) + "°"
       : "SPACE X " + observerWorld.x.toFixed(0) + " Y " + observerWorld.y.toFixed(0) + " Z " + observerWorld.z.toFixed(0);
 
     const inversePlanetRotation = planetWorld.getWorldQuaternion(new THREE.Quaternion()).invert();
@@ -2722,7 +2725,7 @@
     if (shipNode) {
       if (onFoot) {
         const distanceToShip = observerWorld.distanceTo(shipWorld);
-        shipNode.textContent = "SHIP " + shipLat.toFixed(2) + "°, " + shipLon.toFixed(2) + "°  //  " + distanceToShip.toFixed(0) + "u";
+        shipNode.textContent = "SHIP LAT " + shipLat.toFixed(4) + "° LON " + shipLon.toFixed(4) + "°  //  " + distanceToShip.toFixed(1) + "u";
       } else {
         shipNode.textContent = "HAVEN " + ship.position.distanceTo(planetCenter).toFixed(0) + "u";
       }
@@ -2991,7 +2994,8 @@
           if (stationRing) stationRing.rotation.z += delta * 0.11;
           if (asteroidBelt) asteroidBelt.rotation.y += delta * 0.0018;
           if (moonOrbit) moonOrbit.rotation.y += delta * 0.006;
-          if (planetWorld) planetWorld.rotation.y += delta * 0.00035;
+          // Keep Haven geographic coordinates stable between clients.
+          // Re-enable visual spin only when tied to a shared network clock.
           updateHUD();
           renderer.render(scene, camera);
         } catch (error) {
