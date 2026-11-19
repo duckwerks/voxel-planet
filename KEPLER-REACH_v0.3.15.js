@@ -18,7 +18,8 @@
   // - Atmospheric planetary shell
   // - Keyboard flight controls
   // - Mobile touch controls
-  // - Chase camera
+  // - Collision-aware follow camera and first-person view
+  // - Analog movement joystick and camera D-pad
   // - Visible initialization diagnostics
   //
   // NO SERVER REQUIRED
@@ -77,9 +78,6 @@
   let scene = null;
   let camera = null;
   let renderer = null;
-  let faunaUp = null;
-  let faunaEast = null;
-  let faunaNorth = null;
 
   let ship = null;
   let station = null;
@@ -113,6 +111,13 @@
   let playerRight = null;
   let playerMove = null;
   let playerCameraTarget = null;
+  let cameraRaycaster = null;
+  let cameraYaw = 0;
+  let cameraPitch = 0.32;
+  let cameraMode = "third";
+  let lookInputX = 0, lookInputY = 0;
+  let cameraButton = null;
+  let lookPad = null;
   let landingState = "idle";
   let landingNormal = null;
   let landingQuaternion = null;
@@ -172,7 +177,7 @@
       letter-spacing:3px;
     ">KEPLER REACH</div>
 
-    <div>PROCEDURAL UNIVERSE // BUILD 0.3.15</div>
+    <div>PROCEDURAL UNIVERSE // BUILD 0.3.14</div>
 
     <div id="kr-location">LOCATION: INITIALIZING</div>
     <div id="kr-speed">VELOCITY: 0</div>
@@ -311,73 +316,74 @@
   }
 
   // ============================================================
-  // MOBILE CONTROLS
+  // MOBILE CONTROLS — ANALOG MOVEMENT + CAMERA D-PAD
   // ============================================================
 
   const mobile = document.createElement("div");
-
   Object.assign(mobile.style, {
-    position: "absolute",
-    right: "18px",
-    bottom: "20px",
-    zIndex: "15",
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 48px)",
-    gap: "6px"
+    position:"absolute",left:"18px",bottom:"22px",zIndex:"16",
+    width:"132px",height:"132px",borderRadius:"50%",
+    border:"2px solid rgba(151,205,222,.68)",
+    background:"radial-gradient(circle,rgba(42,77,91,.58),rgba(9,22,34,.72))",
+    boxShadow:"0 2px 14px rgba(0,0,0,.38)",touchAction:"none",
+    display:"block",userSelect:"none"
   });
-
-  const touchButtons = [
-    ["↑", "w", 1, 2],
-    ["←", "a", 2, 1],
-    ["↓", "s", 2, 2],
-    ["→", "d", 2, 3]
-  ];
-
-  touchButtons.forEach(([label, key, row, col]) => {
-    const button = document.createElement("button");
-
-    button.textContent = label;
-
-    Object.assign(button.style, {
-      gridRow: row,
-      gridColumn: col,
-      width: "48px",
-      height: "44px",
-      color: "#c5e5ff",
-      background: "rgba(15,35,55,.85)",
-      border: "1px solid #567c9d",
-      borderRadius: "5px",
-      fontSize: "19px",
-      touchAction: "none"
-    });
-
-    const press = event => {
-      if (event && event.cancelable) event.preventDefault();
-      keys[key] = true;
-      button.style.transform = "translateY(1px)";
-      button.style.background = "rgba(55,91,119,.96)";
-    };
-    const release = event => {
-      if (event && event.cancelable) event.preventDefault();
-      keys[key] = false;
-      button.style.transform = "";
-      button.style.background = "rgba(15,35,55,.85)";
-    };
-    button.addEventListener("pointerdown", press);
-    button.addEventListener("pointerup", release);
-    button.addEventListener("pointercancel", release);
-    button.addEventListener("lostpointercapture", release);
-    button.addEventListener("touchstart", press, { passive: false });
-    button.addEventListener("touchend", release, { passive: false });
-    button.addEventListener("touchcancel", release, { passive: false });
-    button.addEventListener("mousedown", press);
-    button.addEventListener("mouseup", release);
-    button.addEventListener("mouseleave", release);
-
-    mobile.appendChild(button);
+  const moveKnob=document.createElement("div");
+  Object.assign(moveKnob.style,{
+    position:"absolute",left:"40px",top:"40px",width:"48px",height:"48px",
+    borderRadius:"50%",border:"2px solid rgba(221,241,232,.88)",
+    background:"rgba(101,155,160,.72)",boxShadow:"0 2px 8px rgba(0,0,0,.4)",
+    pointerEvents:"none"
   });
+  mobile.appendChild(moveKnob);root.appendChild(mobile);
+  let movePointerId=null;
+  function releaseMoveStick(){movePointerId=null;moveKnob.style.transform="translate(0px,0px)";keys.w=keys.a=keys.s=keys.d=false;}
+  function updateMoveStick(event){
+    if(movePointerId!==event.pointerId)return;
+    const r=mobile.getBoundingClientRect(),dx=event.clientX-(r.left+r.width/2),dy=event.clientY-(r.top+r.height/2);
+    const d=Math.hypot(dx,dy),scale=d>43?43/d:1,x=dx*scale,y=dy*scale;
+    moveKnob.style.transform=`translate(${x}px,${y}px)`;
+    keys.w=y < -10;keys.s=y > 10;keys.a=x < -10;keys.d=x > 10;
+  }
+  mobile.addEventListener("pointerdown",e=>{if(movePointerId!==null)return;e.preventDefault();movePointerId=e.pointerId;if(mobile.setPointerCapture)mobile.setPointerCapture(e.pointerId);updateMoveStick(e);});
+  mobile.addEventListener("pointermove",updateMoveStick);
+  mobile.addEventListener("pointerup",e=>{if(e.pointerId===movePointerId)releaseMoveStick();});
+  mobile.addEventListener("pointercancel",releaseMoveStick);
+  mobile.addEventListener("lostpointercapture",releaseMoveStick);
 
-  root.appendChild(mobile);
+  lookPad=document.createElement("div");
+  Object.assign(lookPad.style,{
+    position:"absolute",right:"18px",bottom:"22px",zIndex:"16",
+    width:"132px",height:"132px",display:"none",
+    gridTemplateColumns:"repeat(3,40px)",gridTemplateRows:"repeat(3,40px)",
+    gap:"4px",justifyContent:"center",alignContent:"center",
+    touchAction:"none",userSelect:"none"
+  });
+  const lookButtons=[{label:"▲",x:0,y:-1,r:1,c:2},{label:"◀",x:-1,y:0,r:2,c:1},{label:"▼",x:0,y:1,r:3,c:2},{label:"▶",x:1,y:0,r:2,c:3}];
+  for(const item of lookButtons){
+    const b=document.createElement("button");b.type="button";b.textContent=item.label;
+    Object.assign(b.style,{gridRow:item.r,gridColumn:item.c,width:"40px",height:"40px",color:"#d9edf1",background:"rgba(15,35,55,.84)",border:"1px solid #6c9aa7",borderRadius:"8px",font:"bold 18px monospace",touchAction:"none",padding:"0"});
+    const press=e=>{e.preventDefault();lookInputX=item.x;lookInputY=item.y;};
+    const release=e=>{if(e.cancelable)e.preventDefault();if(lookInputX===item.x&&lookInputY===item.y){lookInputX=lookInputY=0;}};
+    b.addEventListener("pointerdown",press);b.addEventListener("pointerup",release);b.addEventListener("pointercancel",release);b.addEventListener("lostpointercapture",release);
+    lookPad.appendChild(b);
+  }
+  const recenterButton=document.createElement("button");recenterButton.type="button";recenterButton.textContent="◎";
+  Object.assign(recenterButton.style,{gridRow:"2",gridColumn:"2",width:"40px",height:"40px",color:"#ffe4ad",background:"rgba(74,75,52,.94)",border:"1px solid #c5ae72",borderRadius:"50%",font:"bold 20px monospace",padding:"0",touchAction:"none"});
+  recenterButton.addEventListener("click",recenterCamera);lookPad.appendChild(recenterButton);root.appendChild(lookPad);
+
+  cameraButton=document.createElement("button");cameraButton.type="button";cameraButton.textContent="VIEW: THIRD PERSON";
+  Object.assign(cameraButton.style,{position:"absolute",top:"242px",right:"18px",zIndex:"26",minWidth:"154px",padding:"10px 12px",display:"none",color:"#d8eee9",background:"rgba(20,35,39,.94)",border:"1px solid #75a69a",borderRadius:"5px",font:"bold 10px monospace",letterSpacing:"1px",touchAction:"manipulation"});
+  cameraButton.addEventListener("click",toggleCameraMode);root.appendChild(cameraButton);
+
+  function recenterCamera(){cameraYaw=0;cameraPitch=0.32;lookInputX=lookInputY=0;}
+  function toggleCameraMode(){
+    if(!onFoot||buggyMode)return;
+    cameraMode=cameraMode==="third"?"first":"third";
+    if(playerAvatar)playerAvatar.visible=cameraMode==="third";
+    cameraButton.textContent=cameraMode==="first"?"VIEW: FIRST PERSON":"VIEW: THIRD PERSON";
+    setStatus(cameraMode==="first"?"FIRST-PERSON EXPLORATION":"DRONE FOLLOW CAMERA");
+  }
 
   // ============================================================
   // KEYBOARD CONTROLS
@@ -403,6 +409,7 @@
     }
     if (key === "f") { toggleBuggy(); event.preventDefault(); return; }
     if (key === "g") { openWildlifeHabitat(); event.preventDefault(); return; }
+    if (key === "v" && onFoot && !buggyMode) { toggleCameraMode(); event.preventDefault(); return; }
 
     if (
       "wasdqer".includes(key) ||
@@ -427,6 +434,7 @@
   document.addEventListener("keydown", keyDown);
   document.addEventListener("keyup", keyUp);
   window.addEventListener("blur", clearKeys);
+  window.addEventListener("blur", releaseMoveStick);
 
   cleanup.push(() => {
     document.removeEventListener("keydown", keyDown);
@@ -1021,7 +1029,7 @@
     }
 
     // ------------------------------------------------------------
-    // AMBIENT FAUNA // v0.3.15
+    // AMBIENT FAUNA // v0.3.14
     // Grazers, shellback hoppers and hovering motes share simple
     // deterministic forage/rest/wander/startle behavior.
     // ------------------------------------------------------------
@@ -1753,6 +1761,7 @@
     if (!ship || !camera || !planetCenter) return;
     landingState = "idle";
     onFoot = false;
+    cameraMode="third";recenterCamera();if(cameraButton)cameraButton.style.display="none";if(lookPad)lookPad.style.display="none";
     buggyMode = false; buggySpeed = 0;
     avatarIsWalking = false;
     avatarIsWalking=false;
@@ -1791,7 +1800,7 @@
     const normalLocal = local.clone().normalize();
     const terrain = terrainProfile(normalLocal.x, normalLocal.y, normalLocal.z);
     const surfaceLocal = normalLocal.clone().multiplyScalar(
-      CONFIG.planetRadius + terrain.elevation + 0.85
+      CONFIG.planetRadius + terrain.elevation + 0.835
     );
     const surfaceWorld = planetWorld.localToWorld(surfaceLocal);
     const worldOrigin = planetWorld.localToWorld(new THREE.Vector3(0, 0, 0));
@@ -1870,6 +1879,9 @@
 
     playerAvatar.position.copy(surface.position);
     playerUp.copy(surface.up);
+    recenterCamera();cameraMode="third";
+    if(cameraButton){cameraButton.style.display="block";cameraButton.textContent="VIEW: THIRD PERSON";}
+    if(lookPad)lookPad.style.display="grid";
 
     // Face away from the ship, projected onto the local tangent plane.
     playerHeading.copy(padRight).addScaledVector(playerUp, -padRight.dot(playerUp)).normalize();
@@ -1912,6 +1924,7 @@
     clearKeys();
 
     if (boardShipButton) boardShipButton.style.display = "none";
+    if (cameraButton) cameraButton.style.display = "none";if(lookPad)lookPad.style.display="none";
     if (disembarkButton) disembarkButton.style.display = "block";
     if (landingButton) landingButton.style.display = "block";
     if (approachLine) approachLine.visible = true;
@@ -1939,6 +1952,7 @@
     const p=havenBuggy.getWorldPosition(new THREE.Vector3());
     if (playerAvatar.position.distanceTo(p)>13) { setStatus("ROVER TOO FAR // WALK CLOSER"); return; }
     buggyMode=true; buggySpeed=0; avatarIsWalking=false; playerAvatar.visible=false;
+    if(cameraButton)cameraButton.style.display="none";if(lookPad)lookPad.style.display="none";
     buggyInteractButton.textContent="EXIT MOON BUGGY"; buggyInteractButton.style.display="block";
     if (boardShipButton) boardShipButton.style.display="none";
     clearKeys(); setStatus("HAVEN UTILITY ROVER // W A S D TO DRIVE");
@@ -1953,7 +1967,8 @@
     playerAvatar.position.copy(surface.position); playerUp.copy(surface.up);
     const fwd=new THREE.Vector3(0,0,-1).applyQuaternion(q);
     playerHeading.copy(fwd).addScaledVector(playerUp,-fwd.dot(playerUp)).normalize();
-    orientAvatar(); buggyMode=false; buggySpeed=0; avatarIsWalking=false; playerAvatar.visible=true;
+    orientAvatar(); buggyMode=false; buggySpeed=0; avatarIsWalking=false; playerAvatar.visible=cameraMode==="third";
+    if(cameraButton)cameraButton.style.display="block";if(lookPad)lookPad.style.display="grid";
     buggyInteractButton.style.display="none"; if(boardShipButton)boardShipButton.style.display="block";
     clearKeys(); setStatus("ON FOOT // HAVEN SURFACE");
   }
@@ -2020,7 +2035,7 @@
           const distance=away.length();
           if(distance<15&&distance>0.001){
             away.normalize();
-            const awayLocalX=away.dot(faunaEast), awayLocalZ=away.dot(faunaNorth);
+            const awayLocalX=away.dot(east), awayLocalZ=away.dot(north);
             const strength=(15-distance)/15;
             x+=awayLocalX*strength*(creature.kind==="hopper"?11:16);
             z+=awayLocalZ*strength*(creature.kind==="hopper"?11:16);
@@ -2032,8 +2047,8 @@
           creature.state=resting?"resting":(grazing?"foraging":"wandering");
         }
 
-        const offset=faunaEast.clone().multiplyScalar(x).addScaledVector(faunaNorth,z);
-        const normal=faunaUp.clone().addScaledVector(offset,1/CONFIG.planetRadius).normalize();
+        const offset=east.clone().multiplyScalar(x).addScaledVector(north,z);
+        const normal=up.clone().addScaledVector(offset,1/CONFIG.planetRadius).normalize();
         const terrain=terrainProfile(normal.x,normal.y,normal.z);
         creature.group.position.copy(normal).multiplyScalar(CONFIG.planetRadius+terrain.elevation+(creature.kind==="hopper"?0.055:0.08));
         const heading=Math.atan2(Math.cos(ax)*rx*0.19,-Math.sin(az)*rz*0.15);
@@ -2052,7 +2067,7 @@
         const flock=faunaReleased?0.85:0.38;
         const driftX=Math.sin(seconds*0.24+creature.phase)*flock;
         const driftZ=Math.cos(seconds*0.21+creature.phase*1.4)*flock;
-        creature.group.position.addScaledVector(faunaEast,driftX).addScaledVector(faunaNorth,driftZ);
+        creature.group.position.addScaledVector(east,driftX).addScaledVector(north,driftZ);
         creature.group.quaternion.copy(creature.baseQuaternion).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),Math.sin(seconds*0.7+creature.phase)*0.08));
       }
     }
@@ -2114,16 +2129,35 @@
       buggyInteractButton.textContent="ENTER MOON BUGGY";
     }
 
-    const desired = playerAvatar.position.clone()
-      .addScaledVector(playerUp, 5.2)
-      .addScaledVector(playerHeading, -9.5);
-    camera.position.lerp(desired, 1 - Math.pow(0.0008, delta));
-
-    playerCameraTarget.copy(playerAvatar.position)
-      .addScaledVector(playerUp, 1.25)
-      .addScaledVector(playerHeading, 2.4);
+    cameraYaw+=lookInputX*1.75*delta;
+    cameraPitch=THREE.MathUtils.clamp(cameraPitch+lookInputY*1.15*delta,-0.12,0.88);
+    playerCameraTarget.copy(playerAvatar.position).addScaledVector(playerUp,1.35);
     camera.up.copy(playerUp);
-    camera.lookAt(playerCameraTarget);
+    if(cameraMode==="first"){
+      const viewForward=playerHeading.clone().applyAxisAngle(playerUp,cameraYaw);
+      viewForward.addScaledVector(playerUp,Math.tan(cameraPitch)*0.45).normalize();
+      const head=playerAvatar.position.clone().addScaledVector(playerUp,2.02);
+      camera.position.lerp(head,1-Math.pow(0.00008,delta));
+      camera.lookAt(head.clone().addScaledVector(viewForward,12));
+    }else{
+      const back=playerHeading.clone().negate().applyAxisAngle(playerUp,cameraYaw);
+      const desired=playerCameraTarget.clone().addScaledVector(back,8.6*Math.cos(cameraPitch)).addScaledVector(playerUp,8.6*Math.sin(cameraPitch));
+      const ray=desired.clone().sub(playerCameraTarget),desiredDistance=ray.length();ray.normalize();
+      if(cameraRaycaster){
+        cameraRaycaster.set(playerCameraTarget,ray);
+        const hits=cameraRaycaster.intersectObjects(scene.children,true);
+        for(const hit of hits){
+          let node=hit.object,ownAvatar=false;
+          while(node){if(node===playerAvatar){ownAvatar=true;break;}node=node.parent;}
+          if(!ownAvatar&&hit.distance>0.25){
+            desired.copy(playerCameraTarget).addScaledVector(ray,Math.max(1.25,Math.min(desiredDistance,hit.distance-0.42)));
+            break;
+          }
+        }
+      }
+      camera.position.lerp(desired,1-Math.pow(0.00008,delta));
+      camera.lookAt(playerCameraTarget);
+    }
 
     const footPhase = document.getElementById("kr-phase");
     const footLocation = document.getElementById("kr-location");
@@ -2559,17 +2593,7 @@
       THREE = await loadThree();
 
       if (destroyed) return;
-
-      // Share the Haven settlement tangent basis with the wildlife animation.
-      const faunaAnchorLon = 0.08;
-      const faunaAnchorLat = 0.12;
-      faunaUp = new THREE.Vector3(
-        Math.cos(faunaAnchorLat) * Math.cos(faunaAnchorLon),
-        Math.sin(faunaAnchorLat),
-        Math.cos(faunaAnchorLat) * Math.sin(faunaAnchorLon)
-      ).normalize();
-      faunaEast = new THREE.Vector3(0, 1, 0).cross(faunaUp).normalize();
-      faunaNorth = faunaUp.clone().cross(faunaEast).normalize();
+      cameraRaycaster = new THREE.Raycaster();
 
       // Allocate Three.js objects after THREE is available.
       forward = new THREE.Vector3();
@@ -2636,10 +2660,17 @@
       renderer.domElement.style.cssText =
         "position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1";
 
-      root.insertBefore(
-        renderer.domElement,
-        hud
-      );
+      root.insertBefore(renderer.domElement,hud);
+      renderer.domElement.style.touchAction="none";
+      let lookPointerId=null,lastLookX=0,lastLookY=0;
+      const lookDown=e=>{if(!onFoot||buggyMode||e.button>0)return;lookPointerId=e.pointerId;lastLookX=e.clientX;lastLookY=e.clientY;if(renderer.domElement.setPointerCapture)renderer.domElement.setPointerCapture(e.pointerId);};
+      const lookMove=e=>{if(e.pointerId!==lookPointerId)return;const dx=e.clientX-lastLookX,dy=e.clientY-lastLookY;lastLookX=e.clientX;lastLookY=e.clientY;cameraYaw-=dx*0.006;cameraPitch=THREE.MathUtils.clamp(cameraPitch-dy*0.0045,-0.12,0.88);};
+      const lookEnd=e=>{if(e.pointerId===lookPointerId)lookPointerId=null;};
+      renderer.domElement.addEventListener("pointerdown",lookDown);
+      renderer.domElement.addEventListener("pointermove",lookMove);
+      renderer.domElement.addEventListener("pointerup",lookEnd);
+      renderer.domElement.addEventListener("pointercancel",lookEnd);
+      cleanup.push(()=>{renderer.domElement.removeEventListener("pointerdown",lookDown);renderer.domElement.removeEventListener("pointermove",lookMove);renderer.domElement.removeEventListener("pointerup",lookEnd);renderer.domElement.removeEventListener("pointercancel",lookEnd);});
 
       // Lighting
 
@@ -2790,6 +2821,7 @@
       if (landingButton && landingButton.parentNode) landingButton.remove();
       if (disembarkButton && disembarkButton.parentNode) disembarkButton.remove();
       if (boardShipButton && boardShipButton.parentNode) boardShipButton.remove();
+      if (cameraButton && cameraButton.parentNode) cameraButton.remove();
       if (buggyInteractButton && buggyInteractButton.parentNode) buggyInteractButton.remove();
       if (habitatGateButton && habitatGateButton.parentNode) habitatGateButton.remove();
 
