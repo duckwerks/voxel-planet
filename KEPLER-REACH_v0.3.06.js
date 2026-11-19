@@ -179,7 +179,7 @@
   root.appendChild(homeButton);
 
   // LANDING CONTROL
-  const landingButton = document.createElement("button");
+  landingButton = document.createElement("button");
   landingButton.type = "button";
   landingButton.textContent = "LANDING ASSIST";
   Object.assign(landingButton.style, {
@@ -1064,7 +1064,8 @@
 
     // Recompute the pad's world-space frame as Haven slowly rotates.
     landingMarker.getWorldPosition(landingTarget);
-    landingNormal.set(0, 1, 0).applyQuaternion(landingMarker.getWorldQuaternion(new THREE.Quaternion())).normalize();
+    landingMarker.getWorldQuaternion(landingQuaternion);
+    landingNormal.set(0, 1, 0).applyQuaternion(landingQuaternion).normalize();
     landingDestination.copy(landingTarget).addScaledVector(landingNormal, 2.4);
 
     const distance = ship.position.distanceTo(landingDestination);
