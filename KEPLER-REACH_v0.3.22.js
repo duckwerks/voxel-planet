@@ -374,9 +374,15 @@
 
   root.appendChild(statusPanel);
 
+  let statusTimer = 0;
   function setStatus(message, error = false) {
     statusPanel.textContent = message;
     statusPanel.style.color = error ? "#ff7777" : "#a9c5d9";
+    statusPanel.style.display = "block";
+    if (statusTimer) clearTimeout(statusTimer);
+    if (!error) {
+      statusTimer = setTimeout(() => { statusPanel.style.display = "none"; }, 4200);
+    }
     const hudStatus = document.getElementById("kr-status");
     if (hudStatus) hudStatus.textContent = message;
     console[error ? "error" : "log"]("[Kepler Reach]", message);
