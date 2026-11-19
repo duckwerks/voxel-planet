@@ -2711,7 +2711,10 @@
         shipNode.textContent = "HAVEN " + ship.position.distanceTo(planetCenter).toFixed(0) + "u";
       }
     }
-    if (compassRose) compassRose.style.transform = "rotate(" + (-bearing) + "deg)";
+    if (compassRose) {
+      compassRose.style.transform = "rotate(" + (-bearing) + "deg)";
+      for (const mark of compassRose.children) mark.style.transform = "rotate(" + bearing + "deg)";
+    }
   }
 
   function updateHUD() {
