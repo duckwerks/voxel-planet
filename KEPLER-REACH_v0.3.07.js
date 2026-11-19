@@ -1099,6 +1099,7 @@
     velocity.x = 0;
     velocity.y = 0;
     velocity.z = 0;
+    camera.up.set(0, 1, 0);
     camera.position.set(0, 17, -345);
     camera.lookAt(0, 0, -435);
     clearKeys();
@@ -1267,6 +1268,7 @@
     if (landingButton) landingButton.style.display = "block";
     if (approachLine) approachLine.visible = true;
 
+    camera.up.set(0, 1, 0);
     camera.position.copy(ship.position).addScaledVector(padUp, 12);
     lookTarget.copy(ship.position).addScaledVector(padUp, 4);
     camera.lookAt(lookTarget);
@@ -1684,6 +1686,17 @@
       document.getElementById("kr-status");
 
     if (!location) return;
+
+    if (onFoot) {
+      location.textContent = "LOCATION: HAVEN SURFACE";
+      speed.textContent = "MOVEMENT: " + ((keys.w || keys.s) ? "WALKING" : "STANDING");
+      distanceText.textContent = "EXPLORATION: ON FOOT";
+      if (moonText && moonOrbit) {
+        moonText.textContent = "LUNA: " + moonOrbit.rotation.y.toFixed(2) + " ORBIT";
+      }
+      status.textContent = "SURFACE EXPLORATION // HAVEN";
+      return;
+    }
 
     const currentSpeed = Math.sqrt(
       velocity.x * velocity.x +
