@@ -1,0 +1,2271 @@
+
+(() => {
+  "use strict";
+
+  // ============================================================
+  // KEPLER REACH 0.3.09
+  // Procedural 3D Universe for CyTube
+  //
+  // Author: Elwood Edwards
+  // Renderer: Three.js r160 / WebGL
+  //
+  // FEATURES
+  // - Procedural starfield
+  // - Procedural low-poly planet
+  // - Procedural spacecraft
+  // - Procedural orbital station
+  // - Central star and lighting
+  // - Atmospheric planetary shell
+  // - Keyboard flight controls
+  // - Mobile touch controls
+  // - Chase camera
+  // - Visible initialization diagnostics
+  //
+  // NO SERVER REQUIRED
+  // NO COMMANDS YET
+  // NO MULTIPLAYER YET
+  // ============================================================
+
+  if (window.KeplerReach) {
+    window.KeplerReach.destroy();
+  }
+
+  const CONFIG = {
+    version: "0.3.09",
+    seed: 847291,
+    threeVersion: "0.160.0",
+
+    starCount: 3500,
+    settlementCount: 280,
+    asteroidCount: 520,
+
+    planetRadius: 110,
+    planetPosition: [0, 0, -650],
+
+    acceleration: 65,
+    maximumSpeed: 150,
+
+    background: 0x11152a
+  };
+
+  // ============================================================
+  // SEEDED RANDOM GENERATOR
+  // ============================================================
+
+  function seededRandom(seed) {
+    let state = seed >>> 0;
+
+    return function () {
+      state += 0x6D2B79F5;
+
+      let t = state;
+
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  const random = seededRandom(CONFIG.seed);
+
+  // ============================================================
+  // APPLICATION STATE
+  // ============================================================
+
+  let THREE = null;
+  let scene = null;
+  let camera = null;
+  let renderer = null;
+
+  let ship = null;
+  let station = null;
+  let planet = null;
+  let stationRing = null;
+  let asteroidBelt = null;
+  let moonOrbit = null;
+  let planetWorld = null;
+  let landingMarker = null;
+  let landingTarget = null;
+  let approachLine = null;
+  let approachLinePositions = null;
+  let navLabel = null;
+  let landingButton = null;
+  let disembarkButton = null;
+  let boardShipButton = null;
+  let playerAvatar = null;
+  const surfaceCollisionZones = [];
+  let onFoot = false;
+  let playerHeading = null;
+  let playerUp = null;
+  let playerRight = null;
+  let playerMove = null;
+  let playerCameraTarget = null;
+  let landingState = "idle";
+  let landingNormal = null;
+  let landingQuaternion = null;
+  let landingDestination = null;
+
+  let destroyed = false;
+  let animationFrame = 0;
+  let lastTime = 0;
+
+  const velocity = { x: 0, y: 0, z: 0 };
+  const keys = Object.create(null);
+  const cleanup = [];
+
+  // ============================================================
+  // ROOT CONTAINER
+  // ============================================================
+
+  const root = document.createElement("div");
+
+  root.id = "kepler-reach-root";
+
+  Object.assign(root.style, {
+    position: "fixed",
+    inset: "0",
+    width: "100%",
+    height: "100%",
+    overflow: "hidden",
+    background: "#11152a",
+    zIndex: "9998",
+    fontFamily: "monospace"
+  });
+
+  document.body.appendChild(root);
+
+  // ============================================================
+  // HUD
+  // ============================================================
+
+  const hud = document.createElement("div");
+
+  Object.assign(hud.style, {
+    position: "absolute",
+    top: "18px",
+    left: "20px",
+    zIndex: "10",
+    color: "#f2e6c8",
+    fontSize: "12px",
+    lineHeight: "1.8",
+    pointerEvents: "none",
+    textShadow: "0 2px 5px #000"
+  });
+
+  hud.innerHTML = `
+    <div style="
+      color:#ffd477;
+      font-size:18px;
+      letter-spacing:3px;
+    ">KEPLER REACH</div>
+
+    <div>PROCEDURAL UNIVERSE // BUILD 0.3.09</div>
+
+    <div id="kr-location">LOCATION: INITIALIZING</div>
+    <div id="kr-speed">VELOCITY: 0</div>
+    <div id="kr-distance">HAVEN: SCANNING</div>
+    <div id="kr-target">LANDING SITE: ACQUIRING</div>
+    <div id="kr-phase">FLIGHT PHASE: INITIALIZING</div>
+    <div id="kr-moon">LUNA: TRACKING</div>
+    <div id="kr-status">LOADING ENGINE</div>
+  `;
+
+  root.appendChild(hud);
+
+  // HOME / HAVEN RETURN CONTROL
+  const homeButton = document.createElement("button");
+  homeButton.type = "button";
+  homeButton.textContent = "⌂  HOME / HAVEN";
+  Object.assign(homeButton.style, {
+    position: "absolute", top: "18px", right: "18px", zIndex: "25",
+    padding: "11px 15px", color: "#f0d6a4",
+    background: "rgba(13,27,43,.88)", border: "1px solid #9b8059",
+    borderRadius: "5px", font: "bold 12px monospace",
+    letterSpacing: "1px", cursor: "pointer", touchAction: "manipulation",
+    boxShadow: "0 2px 12px rgba(0,0,0,.35)"
+  });
+  homeButton.addEventListener("click", returnHome);
+  root.appendChild(homeButton);
+
+  // LANDING CONTROL
+  landingButton = document.createElement("button");
+  landingButton.type = "button";
+  landingButton.textContent = "LANDING ASSIST";
+  Object.assign(landingButton.style, {
+    position: "absolute", top: "62px", right: "18px", zIndex: "25",
+    minWidth: "154px", padding: "11px 15px",
+    color: "#d5e8e7", background: "rgba(13,27,43,.88)",
+    border: "1px solid #527f83", borderRadius: "5px",
+    font: "bold 11px monospace", letterSpacing: "1px",
+    cursor: "pointer", touchAction: "manipulation",
+    boxShadow: "0 2px 12px rgba(0,0,0,.35)",
+    opacity: "0.48"
+  });
+  landingButton.disabled = true;
+  landingButton.addEventListener("click", () => {
+    if (landingState === "approach") {
+      landingState = "idle";
+      clearKeys();
+      setStatus("LANDING ASSIST ABORTED // MANUAL FLIGHT");
+      return;
+    }
+    if (landingState === "landed") return;
+    const distance = ship && landingTarget
+      ? ship.position.distanceTo(landingTarget)
+      : Infinity;
+    if (distance > 220) {
+      setStatus("LANDING ASSIST LOCKED // CLOSE TO THE BEACON");
+      return;
+    }
+    landingState = "approach";
+    clearKeys();
+    velocity.x = velocity.y = velocity.z = 0;
+    setStatus("LANDING ASSIST ENGAGED // ALIGNING WITH PAD");
+  });
+  root.appendChild(landingButton);
+
+  // ON-FOOT CONTROLS
+  disembarkButton = document.createElement("button");
+  disembarkButton.type = "button";
+  disembarkButton.textContent = "↗  DISEMBARK";
+  Object.assign(disembarkButton.style, {
+    position: "absolute", top: "106px", right: "18px", zIndex: "25",
+    minWidth: "154px", padding: "11px 15px",
+    color: "#e4d5b5", background: "rgba(20,31,34,.92)",
+    border: "1px solid #a18a60", borderRadius: "5px",
+    font: "bold 11px monospace", letterSpacing: "1px",
+    cursor: "pointer", touchAction: "manipulation",
+    display: "none"
+  });
+  disembarkButton.addEventListener("click", disembark);
+  root.appendChild(disembarkButton);
+
+  boardShipButton = document.createElement("button");
+  boardShipButton.type = "button";
+  boardShipButton.textContent = "BOARD SHIP";
+  Object.assign(boardShipButton.style, {
+    position: "absolute", top: "106px", right: "18px", zIndex: "25",
+    minWidth: "154px", padding: "11px 15px",
+    color: "#d5e8e7", background: "rgba(13,27,43,.92)",
+    border: "1px solid #527f83", borderRadius: "5px",
+    font: "bold 11px monospace", letterSpacing: "1px",
+    cursor: "pointer", touchAction: "manipulation",
+    display: "none"
+  });
+  boardShipButton.addEventListener("click", boardShip);
+  root.appendChild(boardShipButton);
+
+  // ============================================================
+  // STATUS / ERROR DISPLAY
+  // ============================================================
+
+  const statusPanel = document.createElement("div");
+
+  Object.assign(statusPanel.style, {
+    position: "absolute",
+    bottom: "15px",
+    left: "20px",
+    zIndex: "20",
+    color: "#a9c5d9",
+    fontSize: "11px",
+    lineHeight: "1.8",
+    pointerEvents: "none",
+    textShadow: "0 2px 5px #000"
+  });
+
+  statusPanel.textContent = "INITIALIZING KEPLER REACH";
+
+  root.appendChild(statusPanel);
+
+  function setStatus(message, error = false) {
+    statusPanel.textContent = message;
+
+    statusPanel.style.color =
+      error ? "#ff7777" : "#a9c5d9";
+
+    console.log("[Kepler Reach]", message);
+  }
+
+  // ============================================================
+  // MOBILE CONTROLS
+  // ============================================================
+
+  const mobile = document.createElement("div");
+
+  Object.assign(mobile.style, {
+    position: "absolute",
+    right: "18px",
+    bottom: "20px",
+    zIndex: "15",
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 48px)",
+    gap: "6px"
+  });
+
+  const touchButtons = [
+    ["↑", "w", 1, 2],
+    ["←", "a", 2, 1],
+    ["↓", "s", 2, 2],
+    ["→", "d", 2, 3]
+  ];
+
+  touchButtons.forEach(([label, key, row, col]) => {
+    const button = document.createElement("button");
+
+    button.textContent = label;
+
+    Object.assign(button.style, {
+      gridRow: row,
+      gridColumn: col,
+      width: "48px",
+      height: "44px",
+      color: "#c5e5ff",
+      background: "rgba(15,35,55,.85)",
+      border: "1px solid #567c9d",
+      borderRadius: "5px",
+      fontSize: "19px",
+      touchAction: "none"
+    });
+
+    button.addEventListener("pointerdown", event => {
+      event.preventDefault();
+
+      keys[key] = true;
+
+      button.setPointerCapture(event.pointerId);
+    });
+
+    function release() {
+      keys[key] = false;
+    }
+
+    button.addEventListener("pointerup", release);
+    button.addEventListener("pointercancel", release);
+    button.addEventListener("lostpointercapture", release);
+
+    mobile.appendChild(button);
+  });
+
+  root.appendChild(mobile);
+
+  // ============================================================
+  // KEYBOARD CONTROLS
+  // ============================================================
+
+  function isTyping() {
+    const element = document.activeElement;
+
+    return element && (
+      element.tagName === "INPUT" ||
+      element.tagName === "TEXTAREA" ||
+      element.isContentEditable
+    );
+  }
+
+  function keyDown(event) {
+    if (isTyping()) return;
+
+    const key = event.key.toLowerCase();
+
+    if (key === "h") {
+      returnHome();
+      event.preventDefault();
+      return;
+    }
+
+    if (
+      "wasdqer".includes(key) ||
+      key === "arrowup" ||
+      key === "arrowdown"
+    ) {
+      keys[key] = true;
+      event.preventDefault();
+    }
+  }
+
+  function keyUp(event) {
+    keys[event.key.toLowerCase()] = false;
+  }
+
+  function clearKeys() {
+    Object.keys(keys).forEach(key => {
+      keys[key] = false;
+    });
+  }
+
+  document.addEventListener("keydown", keyDown);
+  document.addEventListener("keyup", keyUp);
+  window.addEventListener("blur", clearKeys);
+
+  cleanup.push(() => {
+    document.removeEventListener("keydown", keyDown);
+    document.removeEventListener("keyup", keyUp);
+    window.removeEventListener("blur", clearKeys);
+  });
+
+  // ============================================================
+  // LOAD THREE.JS
+  //
+  // IMPORTANT:
+  // Use the ES module build, not the old three.min.js file.
+  // ============================================================
+
+  async function loadThree() {
+    setStatus("LOADING THREE.JS MODULE");
+
+    const module = await import(
+      "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+    );
+
+    if (!module.WebGLRenderer) {
+      throw new Error("Three.js module did not initialize.");
+    }
+
+    return module;
+  }
+
+  // ============================================================
+  // GEOMETRY HELPERS
+  // ============================================================
+
+  function makeMaterial(color, options = {}) {
+    return new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.8,
+      metalness: 0.2,
+      flatShading: true,
+      ...options
+    });
+  }
+
+  function makeBox(w, h, d, color) {
+    return new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      makeMaterial(color)
+    );
+  }
+
+  // ============================================================
+  // PROCEDURAL SURFACE SETTLEMENTS
+  // Instanced voxel-like structures keep draw calls low.
+  // ============================================================
+
+  function createSurfaceSettlements(world) {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.92,
+      metalness: 0.12,
+      vertexColors: true,
+      flatShading: true
+    });
+    const mesh = new THREE.InstancedMesh(
+      geometry,
+      material,
+      CONFIG.settlementCount
+    );
+    const dummy = new THREE.Object3D();
+    const normal = new THREE.Vector3();
+    const tangent = new THREE.Vector3();
+    const color = new THREE.Color();
+    const palette = [0xe58b63, 0x62b9a9, 0xb58acb, 0xe3c46c, 0x6f9ed0, 0xf0d8b0];
+
+    for (let i = 0; i < CONFIG.settlementCount; i++) {
+      // Keep settlements in broad clusters rather than a uniform grid.
+      const cluster = i % 7;
+      const clusterLongitude = cluster * (Math.PI * 2 / 7);
+      const longitude = clusterLongitude + (random() - 0.5) * 0.48;
+      const latitude = (random() - 0.5) * 1.45;
+
+      normal.set(
+        Math.cos(latitude) * Math.cos(longitude),
+        Math.sin(latitude),
+        Math.cos(latitude) * Math.sin(longitude)
+      ).normalize();
+
+      const height = 0.7 + random() * 3.8;
+      const width = 0.65 + random() * 1.45;
+      const depth = 0.65 + random() * 1.45;
+      const ground = terrainProfile(normal.x, normal.y, normal.z).elevation;
+
+      dummy.position.copy(normal).multiplyScalar(
+        CONFIG.planetRadius + ground + height * 0.48
+      );
+      dummy.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        normal
+      );
+      dummy.scale.set(width, height, depth);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+
+      color.setHex(palette[Math.floor(random() * palette.length)]);
+      color.multiplyScalar(0.82 + random() * 0.35);
+      mesh.setColorAt(i, color);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    world.add(mesh);
+  }
+
+  // ============================================================
+  // PROCEDURAL PLANET TERRAIN
+  // ============================================================
+
+  function terrainNoise(x, y, z) {
+    const a = Math.sin(x * 9.1 + y * 4.3 + z * 7.2);
+    const b = Math.sin(x * 21.7 - y * 13.1 + z * 17.3);
+    const c = Math.sin(x * 43.2 + y * 31.4 - z * 27.1);
+    return a * 0.55 + b * 0.28 + c * 0.17;
+  }
+
+  // Continental forms, eroded lowlands and ridged mountain chains.
+  // Shared with surface placement so structures follow the terrain.
+  function terrainProfile(x, y, z) {
+    const continents = terrainNoise(x * 0.72 + 2.1, y * 0.72 - 1.4, z * 0.72 + 3.7);
+    const detail = terrainNoise(x * 2.8 - 4.2, y * 2.8 + 1.7, z * 2.8 - 2.3);
+    const ridgeField = terrainNoise(x * 1.65 + 8.4, y * 1.65 - 5.1, z * 1.65 + 0.8);
+    const ridges = Math.pow(Math.max(0, (0.72 - Math.abs(ridgeField)) / 0.72), 2);
+    const land = continents > -0.12;
+    const elevation = land
+      ? 1.5 + continents * 3.2 + detail * 2.1 + ridges * 11.5
+      : -3.4 + detail * 0.45;
+    return { continents, detail, ridges, land, elevation };
+  }
+
+  function createLandingSite(world) {
+    const longitude = 0.08;
+    const latitude = 0.12;
+    const normal = new THREE.Vector3(
+      Math.cos(latitude) * Math.cos(longitude),
+      Math.sin(latitude),
+      Math.cos(latitude) * Math.sin(longitude)
+    ).normalize();
+    const ground = terrainProfile(normal.x, normal.y, normal.z).elevation;
+    const site = new THREE.Group();
+    site.position.copy(normal).multiplyScalar(CONFIG.planetRadius + ground + 0.35);
+    site.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+
+    const pad = new THREE.Mesh(
+      new THREE.CylinderGeometry(8.5, 8.5, 0.65, 12),
+      makeMaterial(0x667b82, { metalness: 0.48, roughness: 0.72 })
+    );
+    site.add(pad);
+
+    const padCore = new THREE.Mesh(
+      new THREE.CylinderGeometry(5.8, 5.8, 0.68, 12),
+      new THREE.MeshBasicMaterial({ color: 0xb59a69 })
+    );
+    site.add(padCore);
+
+    const tower = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.55, 0.8, 7, 6),
+      makeMaterial(0x7f8d91, { metalness: 0.55 })
+    );
+    tower.position.set(6.2, 3.5, -5.8);
+    site.add(tower);
+
+    const beacon = new THREE.Mesh(
+      new THREE.SphereGeometry(1.05, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffbd70 })
+    );
+    beacon.position.set(6.2, 7.5, -5.8);
+    site.add(beacon);
+
+    const mastLight = new THREE.PointLight(0xffb86a, 2.2, 24);
+    mastLight.position.copy(beacon.position);
+    site.add(mastLight);
+    world.add(site);
+  }
+
+
+  // ============================================================
+  // HAVEN SETTLEMENT DISTRICT // v0.3.08
+  // Seeded architectural language, surface-following props,
+  // pedestrian walkways, settlement gate and outdoor cinema.
+  // ============================================================
+
+  function createHavenSettlement(world) {
+    const anchorLon = 0.08;
+    const anchorLat = 0.12;
+    const up = new THREE.Vector3(
+      Math.cos(anchorLat) * Math.cos(anchorLon),
+      Math.sin(anchorLat),
+      Math.cos(anchorLat) * Math.sin(anchorLon)
+    ).normalize();
+    const east = new THREE.Vector3(0, 1, 0).cross(up).normalize();
+    const north = up.clone().cross(east).normalize();
+    const district = new THREE.Group();
+    world.add(district);
+
+    // Stable planet identity. Future flora/fauna generators can use
+    // independent streams derived from this value without changing
+    // the existing terrain or settlement random sequence.
+    const ecologySeed = (CONFIG.seed ^ 0x48415645) >>> 0;
+    function ecologyRandom(stream) {
+      let state = (ecologySeed ^ stream) >>> 0;
+      return function () {
+        state = (state + 0x6D2B79F5) >>> 0;
+        let t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    const plantRandom = ecologyRandom(0x504c414e);
+    const propRandom = ecologyRandom(0x50524f50);
+
+    const mat = {
+      path: makeMaterial(0xd7c7a3, { roughness: 0.94, metalness: 0.02 }),
+      pathEdge: makeMaterial(0x4b8588, { roughness: 0.8, metalness: 0.16 }),
+      coral: makeMaterial(0xe87965, { roughness: 0.78 }),
+      turquoise: makeMaterial(0x42b9b0, { roughness: 0.62, metalness: 0.12 }),
+      lilac: makeMaterial(0xa58bc7, { roughness: 0.76 }),
+      cream: makeMaterial(0xf0d9a5, { roughness: 0.8 }),
+      dark: makeMaterial(0x34434a, { roughness: 0.9 }),
+      glass: new THREE.MeshStandardMaterial({
+        color: 0x8ce5dc, emissive: 0x286f75, emissiveIntensity: 0.34,
+        metalness: 0.35, roughness: 0.24, transparent: true, opacity: 0.86
+      }),
+      neonPink: new THREE.MeshBasicMaterial({ color: 0xff6b9c }),
+      neonMint: new THREE.MeshBasicMaterial({ color: 0x7dffd1 }),
+      leaf: [0x70c98b, 0x9bd46f, 0x55bcb0, 0xd18b9b].map(c =>
+        makeMaterial(c, { roughness: 0.96 })
+      )
+    };
+
+    const upAxis = new THREE.Vector3(0, 1, 0);
+    function surfaceFrame(x, z, heightOffset = 0) {
+      const offset = east.clone().multiplyScalar(x).addScaledVector(north, z);
+      const normal = up.clone().addScaledVector(offset, 1 / CONFIG.planetRadius).normalize();
+      const ground = terrainProfile(normal.x, normal.y, normal.z).elevation;
+      const position = normal.clone().multiplyScalar(
+        CONFIG.planetRadius + ground + heightOffset
+      );
+      const q = new THREE.Quaternion().setFromUnitVectors(upAxis, normal);
+      return { position, normal, q };
+    }
+    function place(mesh, x, z, y = 0, yaw = 0) {
+      const frame = surfaceFrame(x, z, y);
+      mesh.position.copy(frame.position);
+      mesh.quaternion.copy(frame.q);
+      if (yaw) mesh.rotateY(yaw);
+      district.add(mesh);
+      return mesh;
+    }
+    function box(w, h, d, material, x, z, y = h / 2, yaw = 0) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+      return place(mesh, x, z, y, yaw);
+    }
+    function cylinder(radiusTop, radiusBottom, height, material, x, z, y, sides = 8) {
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(radiusTop, radiusBottom, height, sides),
+        material
+      );
+      return place(mesh, x, z, y, 0);
+    }
+
+    // A broad pedestrian promenade leaves the landing pad and leads
+    // through the settlement gate toward the outdoor cinema.
+    for (let i = 0; i < 12; i++) {
+      const x = 12 + i * 5.5;
+      box(5.3, 0.42, 7.2, mat.path, x, 0, 0.35);
+      box(5.3, 0.16, 0.34, mat.pathEdge, x, -3.75, 0.43);
+      box(5.3, 0.16, 0.34, mat.pathEdge, x, 3.75, 0.43);
+    }
+
+    // Smaller side paths and illuminated guide studs.
+    for (let side of [-1, 1]) {
+      for (let i = 0; i < 5; i++) {
+        box(5.2, 0.3, 4.4, mat.path, 29 + i * 4.8, side * 13, 0.25);
+      }
+    }
+    for (let i = 0; i < 13; i++) {
+      const x = 13 + i * 5.1;
+      const stud = new THREE.Mesh(new THREE.SphereGeometry(0.28, 6, 5), mat.neonMint);
+      place(stud, x, -4.25, 0.55);
+      const lamp = new THREE.PointLight(0x72e9c8, 0.45, 8);
+      lamp.position.copy(stud.position).addScaledVector(surfaceFrame(x, -4.25).normal, 1.1);
+      district.add(lamp);
+    }
+
+    // Settlement entrance: colorful retro-futurist gate and sign.
+    box(2.2, 8, 2.2, mat.turquoise, 34, -6, 4);
+    box(2.2, 8, 2.2, mat.coral, 34, 6, 4);
+    box(15, 1.7, 2.4, mat.cream, 34, 0, 8.3);
+    box(12.8, 0.34, 0.28, mat.neonPink, 34, -1.28, 8.2);
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(10.5, 1.1, 0.22), mat.dark);
+    place(sign, 34, 0, 8.4);
+    const signGlow = new THREE.Mesh(new THREE.BoxGeometry(9.5, 0.16, 0.25), mat.neonMint);
+    place(signGlow, 34, 0, 8.98);
+
+    // Three recognizable modular buildings around a small plaza.
+    const buildingSpecs = [
+      { x: 43, z: -18, w: 13, h: 7, d: 11, body: mat.coral, roof: mat.cream },
+      { x: 48, z: 18, w: 15, h: 8, d: 12, body: mat.turquoise, roof: mat.lilac },
+      { x: 68, z: 4, w: 12, h: 6, d: 10, body: mat.lilac, roof: mat.cream }
+    ];
+    for (const b of buildingSpecs) {
+      box(b.w, b.h, b.d, b.body, b.x, b.z, b.h / 2 + 0.15);
+      box(b.w + 1.2, 0.9, b.d + 1.2, b.roof, b.x, b.z, b.h + 0.65);
+      box(b.w * 0.48, b.h * 0.42, 0.32, mat.glass, b.x, b.z - b.d / 2 - 0.18, b.h * 0.56);
+      box(2.4, 3.6, 0.36, mat.dark, b.x, b.z + b.d / 2 + 0.2, 1.9);
+      // Recessed entry canopy, lit threshold and side-facing signage.
+      box(4.8, 0.34, 3.0, b.roof, b.x, b.z + b.d / 2 + 1.8, 4.0);
+      box(3.0, 0.18, 0.24, mat.neonMint, b.x, b.z + b.d / 2 + 2.0, 2.1);
+      box(0.38, 2.5, 0.22, mat.neonPink, b.x - 1.45, b.z + b.d / 2 + 0.28, 2.0);
+      box(0.38, 2.5, 0.22, mat.neonPink, b.x + 1.45, b.z + b.d / 2 + 0.28, 2.0);
+      cylinder(0.42, 0.42, 1.1, mat.neonPink, b.x - b.w * 0.32, b.z - b.d / 2 - 0.3, b.h + 0.7, 8);
+      const entryGlow = new THREE.PointLight(0x74f0cf, 0.65, 13);
+      entryGlow.position.copy(surfaceFrame(b.x, b.z + b.d / 2 + 2.4, 2.6).position);
+      district.add(entryGlow);
+      surfaceCollisionZones.push({ center: surfaceFrame(b.x, b.z).position.clone(), radius: Math.max(b.w, b.d) * 0.56 + 1.6 });
+    }
+
+    // Central plaza: a circular gathering court with a tiered fountain.
+    const plaza = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 0.48, 20), mat.path);
+    place(plaza, 72, -13, 0.28);
+    const plazaRing = new THREE.Mesh(new THREE.TorusGeometry(9.6, 0.22, 5, 32), mat.neonPink);
+    place(plazaRing, 72, -13, 0.65);
+    cylinder(2.4, 3.0, 1.2, mat.turquoise, 72, -13, 1.0, 10);
+    cylinder(1.25, 1.7, 0.9, mat.cream, 72, -13, 2.0, 10);
+    const fountainOrb = new THREE.Mesh(new THREE.IcosahedronGeometry(1.05, 1), mat.neonMint);
+    place(fountainOrb, 72, -13, 3.05);
+    const fountainLight = new THREE.PointLight(0x65f2d0, 1.2, 19);
+    fountainLight.position.copy(surfaceFrame(72, -13, 3.5).position);
+    district.add(fountainLight);
+
+    // Raised planter beds and compact garden sculptures.
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI * 2 / 8;
+      const x = 72 + Math.cos(angle) * 16;
+      const z = -13 + Math.sin(angle) * 16;
+      const bed = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.8, 0.75, 8), mat.coral);
+      place(bed, x, z, 0.5);
+      const sprout = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 0), mat.leaf[i % mat.leaf.length]);
+      place(sprout, x, z, 2.0);
+    }
+
+    // Alien ornamental trees: stacked faceted crowns, with their own
+    // independent seeded stream so later fauna changes stay isolated.
+    for (let i = 0; i < 15; i++) {
+      const x = 22 + plantRandom() * 54;
+      const z = (plantRandom() < 0.5 ? -1 : 1) * (9 + plantRandom() * 22);
+      const trunkHeight = 2.2 + plantRandom() * 2.2;
+      cylinder(0.32, 0.48, trunkHeight, mat.cream, x, z, trunkHeight / 2, 6);
+      const crownColor = mat.leaf[Math.floor(plantRandom() * mat.leaf.length)];
+      const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.1 + plantRandom() * 1.4, 0), crownColor);
+      place(crown, x, z, trunkHeight + 1.8);
+      const crown2 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.25, 0), crownColor);
+      place(crown2, x + (plantRandom() - 0.5) * 1.5, z, trunkHeight + 3.1);
+    }
+
+    // A clearly marked pedestrian arcade leads from plaza to cinema.
+    for (let i = 0; i < 5; i++) {
+      const x = 77 + i * 4.5;
+      box(3.8, 0.28, 4.8, mat.cream, x, -31, 0.35);
+      const bollard = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 2.0, 7), mat.coral);
+      place(bollard, x, -34.1, 1.0);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.38, 7, 5), mat.neonMint);
+      place(cap, x, -34.1, 2.05);
+    }
+
+    // Retro drive-in amphitheatre: screen, colored surround, low stage,
+    // speaker pylons and curved rows of individual seats.
+    box(2.2, 15, 28, mat.coral, 91, -29, 7.5);
+    box(1.2, 11.8, 23, mat.dark, 92.3, -29, 7.3);
+    box(0.5, 9.8, 20, mat.glass, 93.05, -29, 7.3);
+    box(0.65, 10.8, 21, mat.neonPink, 93.4, -29, 7.3);
+    box(5, 1.1, 31, mat.turquoise, 91, -29, 0.7);
+    // Rear screen service block and visible side access panels.
+    box(3.2, 5.5, 8.0, mat.lilac, 94.2, -29, 3.0);
+    box(0.3, 3.6, 2.0, mat.neonMint, 96.0, -29, 2.0);
+    surfaceCollisionZones.push({ center: surfaceFrame(94, -29).position.clone(), radius: 7.5 });
+
+    for (const side of [-1, 1]) {
+      cylinder(0.7, 1.0, 6.5, mat.lilac, 91, -29 + side * 18, 3.3, 8);
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.8, 8, 6), mat.neonMint);
+      place(beacon, 91, -29 + side * 18, 6.8);
+    }
+    for (let row = 0; row < 3; row++) {
+      for (let seat = 0; seat < 7; seat++) {
+        const x = 55 + seat * 5.5;
+        const z = -49 - row * 5.2;
+        const yaw = -0.12;
+        box(2.5, 1.4, 2.0, seat % 2 ? mat.coral : mat.lilac, x, z, 0.95, yaw);
+        box(2.5, 1.8, 0.48, mat.cream, x, z - 0.72, 1.8, yaw);
+      }
+    }
+
+    // Decorative alien boulders and colored mineral spires.
+    for (let i = 0; i < 22; i++) {
+      const x = 15 + propRandom() * 90;
+      const z = (propRandom() - 0.5) * 88;
+      const size = 0.8 + propRandom() * 2.1;
+      const rockMat = [mat.lilac, mat.coral, mat.turquoise][Math.floor(propRandom() * 3)];
+      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), rockMat);
+      rock.rotation.set(propRandom(), propRandom() * 2, propRandom());
+      place(rock, x, z, size * 0.45);
+    }
+
+    // Seeded crystalline mineral clusters around the outer garden.
+    const crystalRandom = ecologyRandom(0x43525953);
+    const crystalMaterials = [mat.turquoise, mat.lilac, mat.coral, mat.cream];
+    for (let i = 0; i < 18; i++) {
+      const x = 18 + crystalRandom() * 83;
+      const z = (crystalRandom() - 0.5) * 102;
+      const height = 1.6 + crystalRandom() * 3.8;
+      const crystal = new THREE.Mesh(
+        new THREE.ConeGeometry(0.65 + crystalRandom() * 0.8, height, 5),
+        crystalMaterials[Math.floor(crystalRandom() * crystalMaterials.length)]
+      );
+      place(crystal, x, z, height / 2);
+    }
+
+    // A subtle local identity marker for future network presence and
+    // ecological catalogues; no server or network dependency added.
+    district.userData.worldSeed = CONFIG.seed >>> 0;
+    district.userData.ecologySeed = ecologySeed;
+    district.userData.biome = "HAVEN // WARM COASTAL HIGHLANDS";
+  }
+
+  function createPlanet() {
+    setStatus("GENERATING HAVEN");
+
+    const geometry = new THREE.SphereGeometry(
+      CONFIG.planetRadius,
+      112,
+      80
+    );
+
+    const positions = geometry.attributes.position;
+    const colors = [];
+
+    const color = new THREE.Color();
+
+    const ocean = new THREE.Color("#287f91");
+    const shelf = new THREE.Color("#55b99c");
+    const lowland = new THREE.Color("#d49b62");
+    const mountain = new THREE.Color("#b47b9d");
+    const highland = new THREE.Color("#f0d9a0");
+
+    for (let i = 0; i < positions.count; i++) {
+      let x = positions.getX(i);
+      let y = positions.getY(i);
+      let z = positions.getZ(i);
+
+      const length = Math.sqrt(
+        x * x + y * y + z * z
+      );
+
+      x /= length;
+      y /= length;
+      z /= length;
+
+      const terrain = terrainProfile(x, y, z);
+      const elevation = terrain.elevation;
+      const radius = CONFIG.planetRadius + elevation;
+
+      positions.setXYZ(
+        i,
+        x * radius,
+        y * radius,
+        z * radius
+      );
+
+      if (!terrain.land) {
+        color.copy(terrain.continents < -0.34 ? ocean : shelf);
+      } else if (terrain.ridges > 0.48 || elevation > 12) {
+        color.copy(highland);
+      } else if (terrain.ridges > 0.2 || elevation > 6) {
+        color.copy(mountain);
+      } else {
+        color.copy(lowland);
+      }
+      color.multiplyScalar(0.94 + terrain.detail * 0.075 + random() * 0.035);
+
+      colors.push(
+        color.r,
+        color.g,
+        color.b
+      );
+    }
+
+    geometry.setAttribute(
+      "color",
+      new THREE.Float32BufferAttribute(colors, 3)
+    );
+
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 1,
+      flatShading: true
+    });
+
+    const world = new THREE.Group();
+
+    planet = new THREE.Mesh(
+      geometry,
+      material
+    );
+
+    world.add(planet);
+
+    // Atmospheric shell
+
+    const atmosphere = new THREE.Mesh(
+      new THREE.SphereGeometry(
+        CONFIG.planetRadius + 5,
+        64,
+        48
+      ),
+      new THREE.MeshBasicMaterial({
+        color: 0x438bb9,
+        transparent: true,
+        opacity: 0.12,
+        side: THREE.FrontSide,
+        depthWrite: false
+      })
+    );
+
+    world.add(atmosphere);
+
+    createSurfaceSettlements(world);
+    createLandingSite(world);
+    createHavenSettlement(world);
+
+    world.position.set(
+      CONFIG.planetPosition[0],
+      CONFIG.planetPosition[1],
+      CONFIG.planetPosition[2]
+    );
+
+    scene.add(world);
+
+    return world;
+  }
+
+  // ============================================================
+  // PROCEDURAL SPACECRAFT
+  // ============================================================
+
+  function createShip() {
+    setStatus("CONSTRUCTING SPACECRAFT");
+
+    const group = new THREE.Group();
+
+    // Main hull
+
+    const hull = new THREE.Mesh(
+      new THREE.ConeGeometry(3.1, 12, 6),
+      makeMaterial(0xb6c3ce, {
+        metalness: 0.55,
+        roughness: 0.4
+      })
+    );
+
+    hull.rotation.x = -Math.PI / 2;
+
+    group.add(hull);
+
+    // Wings
+
+    const wings = new THREE.Mesh(
+      new THREE.BoxGeometry(15, 0.6, 4),
+      makeMaterial(0x687f91, {
+        metalness: 0.6
+      })
+    );
+
+    wings.position.z = 1.5;
+
+    group.add(wings);
+
+    // Cockpit
+
+    const cockpit = new THREE.Mesh(
+      new THREE.SphereGeometry(1.4, 8, 6),
+      makeMaterial(0x65b4ce, {
+        metalness: 0.7,
+        roughness: 0.2
+      })
+    );
+
+    cockpit.position.set(0, 1.8, -1);
+
+    group.add(cockpit);
+
+    // Engines
+
+    for (const side of [-1, 1]) {
+      const engine = new THREE.Mesh(
+        new THREE.SphereGeometry(0.8, 8, 8),
+        new THREE.MeshBasicMaterial({
+          color: 0xff9c50
+        })
+      );
+
+      engine.position.set(
+        side * 3.2,
+        0,
+        4.5
+      );
+
+      group.add(engine);
+    }
+
+    // Ship starting location
+
+    group.position.set(0, 0, -390);
+
+    scene.add(group);
+
+    return group;
+  }
+
+  // ============================================================
+  // PROCEDURAL ORBITAL STATION
+  // ============================================================
+
+  function createStation() {
+    setStatus("CONSTRUCTING ORBITAL STATION");
+
+    const stationGroup = new THREE.Group();
+
+    // Main station core
+
+    stationGroup.add(
+      makeBox(18, 9, 25, 0x788c9d)
+    );
+
+    // Central tower
+
+    const tower = makeBox(
+      7, 17, 7, 0x9aabb8
+    );
+
+    tower.position.y = 11;
+
+    stationGroup.add(tower);
+
+    // Rotating station ring
+
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(
+        24, 1.2, 6, 48
+      ),
+      makeMaterial(0x8ba4b9, {
+        metalness: 0.8
+      })
+    );
+
+    ring.rotation.x = Math.PI / 2;
+
+    stationGroup.add(ring);
+    stationRing = ring;
+
+    // Docking arms
+
+    for (let i = 0; i < 4; i++) {
+      const angle = i * Math.PI / 2;
+
+      const dock = makeBox(
+        5, 4, 18, 0x536b7d
+      );
+
+      dock.position.set(
+        Math.cos(angle) * 18,
+        0,
+        Math.sin(angle) * 18
+      );
+
+      dock.rotation.y = -angle;
+
+      stationGroup.add(dock);
+    }
+
+    stationGroup.position.set(
+      155, 15, -650
+    );
+
+    scene.add(stationGroup);
+
+    station = stationGroup;
+
+    return stationGroup;
+  }
+
+  // ============================================================
+  // PROCEDURAL STARFIELD
+  // ============================================================
+
+  function createStarfield() {
+    setStatus("GENERATING STARFIELD");
+
+    const positions = [];
+    const colors = [];
+
+    for (let i = 0; i < CONFIG.starCount; i++) {
+      const radius = 1200 + random() * 2500;
+
+      const theta = random() * Math.PI * 2;
+      const phi = Math.acos(2 * random() - 1);
+
+      positions.push(
+        radius * Math.sin(phi) * Math.cos(theta),
+        radius * Math.cos(phi),
+        radius * Math.sin(phi) * Math.sin(theta)
+      );
+
+      const brightness = 0.5 + random() * 0.5;
+
+      colors.push(
+        brightness,
+        brightness * (0.9 + random() * 0.1),
+        brightness
+      );
+    }
+
+    const geometry = new THREE.BufferGeometry();
+
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(
+        positions, 3
+      )
+    );
+
+    geometry.setAttribute(
+      "color",
+      new THREE.Float32BufferAttribute(
+        colors, 3
+      )
+    );
+
+    const stars = new THREE.Points(
+      geometry,
+      new THREE.PointsMaterial({
+        size: 2.2,
+        vertexColors: true,
+        sizeAttenuation: false
+      })
+    );
+
+    scene.add(stars);
+  }
+
+  // ============================================================
+  // PROCEDURAL ASTEROID FIELD
+  // A sparse, instanced orbital belt around Haven.
+  // ============================================================
+
+  function createAsteroidBelt() {
+    const geometry = new THREE.DodecahedronGeometry(1, 0);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x8a8175,
+      roughness: 1,
+      metalness: 0.08,
+      flatShading: true
+    });
+
+    asteroidBelt = new THREE.InstancedMesh(
+      geometry,
+      material,
+      CONFIG.asteroidCount
+    );
+
+    const dummy = new THREE.Object3D();
+    const color = new THREE.Color();
+
+    for (let i = 0; i < CONFIG.asteroidCount; i++) {
+      const angle = random() * Math.PI * 2;
+      const radius = 205 + (random() - 0.5) * 48;
+      const vertical = (random() - 0.5) * 34;
+      const size = 1.2 + random() * 5.5;
+
+      dummy.position.set(
+        Math.cos(angle) * radius,
+        vertical,
+        Math.sin(angle) * radius
+      );
+      dummy.rotation.set(
+        random() * Math.PI,
+        random() * Math.PI,
+        random() * Math.PI
+      );
+      dummy.scale.set(
+        size * (0.7 + random() * 0.7),
+        size * (0.55 + random() * 0.8),
+        size * (0.7 + random() * 0.7)
+      );
+      dummy.updateMatrix();
+      asteroidBelt.setMatrixAt(i, dummy.matrix);
+
+      color.setHSL(
+        0.08 + random() * 0.07,
+        0.12 + random() * 0.12,
+        0.31 + random() * 0.22
+      );
+      asteroidBelt.setColorAt(i, color);
+    }
+
+    asteroidBelt.instanceMatrix.needsUpdate = true;
+    if (asteroidBelt.instanceColor) asteroidBelt.instanceColor.needsUpdate = true;
+
+    asteroidBelt.position.copy(planetCenter);
+    scene.add(asteroidBelt);
+  }
+
+  // ============================================================
+  // HAVEN MOON
+  // ============================================================
+
+  function createMoon() {
+    const orbit = new THREE.Group();
+    orbit.position.copy(planetCenter);
+
+    const geometry = new THREE.SphereGeometry(19, 32, 24);
+    const positions = geometry.attributes.position;
+    const colors = [];
+    const base = new THREE.Color("#8c8b83");
+    const dark = new THREE.Color("#555a60");
+    const color = new THREE.Color();
+
+    for (let i = 0; i < positions.count; i++) {
+      const x = positions.getX(i) / 19;
+      const y = positions.getY(i) / 19;
+      const z = positions.getZ(i) / 19;
+      const n = terrainNoise(x * 1.8 + 4, y * 1.8 - 2, z * 1.8 + 7);
+      const craterBand = Math.sin(x * 31 + y * 17 + z * 23);
+      const shade = Math.max(0.58, Math.min(1.08, 0.86 + n * 0.17 + craterBand * 0.035));
+      color.copy(n < -0.25 ? dark : base).multiplyScalar(shade);
+      colors.push(color.r, color.g, color.b);
+    }
+
+    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
+
+    const moon = new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 1,
+        flatShading: true
+      })
+    );
+
+    moon.position.set(345, 12, 0);
+    orbit.add(moon);
+
+    const orbitLine = new THREE.Mesh(
+      new THREE.TorusGeometry(345, 0.22, 4, 160),
+      new THREE.MeshBasicMaterial({
+        color: 0x526b7b,
+        transparent: true,
+        opacity: 0.22
+      })
+    );
+
+    orbitLine.rotation.x = Math.PI / 2;
+    orbit.add(orbitLine);
+
+    scene.add(orbit);
+    moonOrbit = orbit;
+  }
+
+  // ============================================================
+  // CENTRAL STAR
+  // ============================================================
+
+  function createSun() {
+    const sun = new THREE.Mesh(
+      new THREE.SphereGeometry(32, 24, 16),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd99a,
+        flatShading: true
+      })
+    );
+
+    sun.position.set(-500, 180, -1350);
+
+    scene.add(sun);
+
+    const light = new THREE.PointLight(
+      0xffd6a0,
+      1800,
+      1800
+    );
+
+    light.position.copy(sun.position);
+
+    scene.add(light);
+
+    // Sun glow
+
+    const glow = new THREE.Mesh(
+      new THREE.SphereGeometry(43, 20, 16),
+      new THREE.MeshBasicMaterial({
+        color: 0xffbb70,
+        transparent: true,
+        opacity: 0.13,
+        side: THREE.BackSide,
+        depthWrite: false
+      })
+    );
+
+    glow.position.copy(sun.position);
+
+    scene.add(glow);
+  }
+
+  // ============================================================
+  // FLIGHT PHYSICS
+  // ============================================================
+
+  // Three.js vectors are created only after the module has loaded.
+  let forward = null;
+  let cameraOffset = null;
+  let desiredCamera = null;
+  let lookTarget = null;
+  let planetCenter = null;
+
+  function returnHome() {
+    if (!ship || !camera || !planetCenter) return;
+    landingState = "idle";
+    onFoot = false;
+    if (playerAvatar) playerAvatar.visible = false;
+    if (ship) ship.visible = true;
+    if (disembarkButton) disembarkButton.style.display = "none";
+    if (boardShipButton) boardShipButton.style.display = "none";
+    if (landingButton) landingButton.style.display = "block";
+    if (landingButton) {
+      landingButton.textContent = "LANDING ASSIST";
+      landingButton.disabled = true;
+      landingButton.style.opacity = "0.48";
+    }
+    ship.position.set(0, 0, -390);
+    ship.rotation.set(0, 0, 0);
+    velocity.x = 0;
+    velocity.y = 0;
+    velocity.z = 0;
+    camera.up.set(0, 1, 0);
+    camera.position.set(0, 17, -345);
+    camera.lookAt(0, 0, -435);
+    clearKeys();
+    setStatus("HOME POSITION RESTORED // HAVEN AHEAD");
+  }
+
+  // ============================================================
+  // HAVEN SURFACE MOVEMENT
+  // Ground height is sampled from the same deterministic terrain
+  // profile used to build the visible planet mesh.
+  // ============================================================
+
+  function sampleSurface(worldPosition) {
+    const local = planetWorld.worldToLocal(worldPosition.clone());
+    const normalLocal = local.clone().normalize();
+    const terrain = terrainProfile(normalLocal.x, normalLocal.y, normalLocal.z);
+    const surfaceLocal = normalLocal.clone().multiplyScalar(
+      CONFIG.planetRadius + terrain.elevation + 0.85
+    );
+    const surfaceWorld = planetWorld.localToWorld(surfaceLocal);
+    const worldOrigin = planetWorld.localToWorld(new THREE.Vector3(0, 0, 0));
+    const upWorld = surfaceWorld.clone().sub(worldOrigin).normalize();
+    return { position: surfaceWorld, up: upWorld, terrain };
+  }
+
+  function createOnFootAvatar() {
+    playerAvatar = new THREE.Group();
+
+    const suit = makeMaterial(0xc0b69a, { roughness: 0.92, metalness: 0.08 });
+    const dark = makeMaterial(0x394a50, { roughness: 0.9 });
+    const visor = new THREE.MeshStandardMaterial({
+      color: 0x75b8c7, metalness: 0.55, roughness: 0.22,
+      emissive: 0x163943, emissiveIntensity: 0.25
+    });
+
+    const torso = new THREE.Mesh(
+      new THREE.BoxGeometry(0.95, 1.15, 0.52), suit
+    );
+    torso.position.y = 1.25;
+    playerAvatar.add(torso);
+
+    const chest = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 0.34, 0.08), dark
+    );
+    chest.position.set(0, 1.35, -0.29);
+    playerAvatar.add(chest);
+
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.38, 10, 8), suit
+    );
+    head.position.y = 2.12;
+    playerAvatar.add(head);
+
+    const helmet = new THREE.Mesh(
+      new THREE.SphereGeometry(0.31, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62),
+      visor
+    );
+    helmet.position.set(0, 2.14, -0.13);
+    helmet.scale.set(1, 0.9, 0.78);
+    playerAvatar.add(helmet);
+
+    const backpack = new THREE.Mesh(
+      new THREE.BoxGeometry(0.62, 0.86, 0.32), dark
+    );
+    backpack.position.set(0, 1.3, 0.39);
+    playerAvatar.add(backpack);
+
+    for (const side of [-1, 1]) {
+      const leg = new THREE.Mesh(
+        new THREE.BoxGeometry(0.3, 0.72, 0.34), dark
+      );
+      leg.position.set(side * 0.25, 0.38, 0.02);
+      playerAvatar.add(leg);
+
+      const boot = new THREE.Mesh(
+        new THREE.BoxGeometry(0.34, 0.2, 0.48), suit
+      );
+      boot.position.set(side * 0.25, 0.1, -0.06);
+      playerAvatar.add(boot);
+
+      const arm = new THREE.Mesh(
+        new THREE.BoxGeometry(0.25, 0.86, 0.28), suit
+      );
+      arm.position.set(side * 0.62, 1.28, -0.02);
+      playerAvatar.add(arm);
+    }
+
+    playerAvatar.visible = false;
+    scene.add(playerAvatar);
+
+    playerHeading = new THREE.Vector3(0, 0, -1);
+    playerUp = new THREE.Vector3(0, 1, 0);
+    playerRight = new THREE.Vector3(1, 0, 0);
+    playerMove = new THREE.Vector3();
+    playerCameraTarget = new THREE.Vector3();
+  }
+
+  function orientAvatar() {
+    playerRight.crossVectors(playerHeading, playerUp).normalize();
+    const back = playerHeading.clone().negate();
+    const basis = new THREE.Matrix4().makeBasis(
+      playerRight, playerUp, back
+    );
+    playerAvatar.quaternion.setFromRotationMatrix(basis);
+  }
+
+  function disembark() {
+    if (landingState !== "landed" || onFoot || !playerAvatar || !ship) return;
+
+    const padWorld = landingMarker.getWorldPosition(new THREE.Vector3());
+    const padUp = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(landingMarker.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+
+    // Step off the pad toward its local right-hand side.
+    const padRight = new THREE.Vector3(1, 0, 0)
+      .applyQuaternion(landingMarker.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+    const spawn = padWorld.clone().addScaledVector(padRight, 12);
+    const surface = sampleSurface(spawn);
+
+    playerAvatar.position.copy(surface.position);
+    playerUp.copy(surface.up);
+
+    // Face away from the ship, projected onto the local tangent plane.
+    playerHeading.copy(padRight).addScaledVector(playerUp, -padRight.dot(playerUp)).normalize();
+    orientAvatar();
+
+    onFoot = true;
+    playerAvatar.visible = true;
+    ship.visible = false;
+    clearKeys();
+
+    if (disembarkButton) disembarkButton.style.display = "none";
+    if (boardShipButton) boardShipButton.style.display = "block";
+    if (landingButton) landingButton.style.display = "none";
+    if (navLabel) navLabel.style.display = "none";
+    if (approachLine) approachLine.visible = false;
+
+    setStatus("ON FOOT // HAVEN SURFACE EXPLORATION");
+  }
+
+  function boardShip() {
+    if (!onFoot || !playerAvatar || !ship) return;
+
+    const padWorld = landingMarker.getWorldPosition(new THREE.Vector3());
+    const padUp = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(landingMarker.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+
+    const distance = playerAvatar.position.distanceTo(padWorld);
+    if (distance > 24) {
+      setStatus("SHIP OUT OF REACH // RETURN TO THE LANDING PAD");
+      return;
+    }
+
+    ship.visible = true;
+    playerAvatar.visible = false;
+    onFoot = false;
+    ship.position.copy(landingDestination);
+    ship.quaternion.copy(landingQuaternion);
+    clearKeys();
+
+    if (boardShipButton) boardShipButton.style.display = "none";
+    if (disembarkButton) disembarkButton.style.display = "block";
+    if (landingButton) landingButton.style.display = "block";
+    if (approachLine) approachLine.visible = true;
+
+    camera.up.set(0, 1, 0);
+    camera.position.copy(ship.position).addScaledVector(padUp, 12);
+    lookTarget.copy(ship.position).addScaledVector(padUp, 4);
+    camera.lookAt(lookTarget);
+    setStatus("BACK ABOARD // HAVEN LANDING PAD");
+  }
+
+  function updateOnFoot(delta) {
+    if (!onFoot || !playerAvatar) return;
+
+    const turn = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
+    const walk = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+
+    if (turn) {
+      playerHeading.applyAxisAngle(playerUp, turn * 1.9 * delta);
+      playerHeading.addScaledVector(playerUp, -playerHeading.dot(playerUp)).normalize();
+    }
+
+    if (walk) {
+      playerMove.copy(playerHeading).multiplyScalar(walk * 5.2 * delta);
+      const previousPosition = playerAvatar.position.clone();
+      playerAvatar.position.add(playerMove);
+      // Early radial collision volumes around major structures. These
+      // are intentionally simple; later builds can replace them with
+      // per-mesh capsule/convex collision shapes.
+      const candidateLocal = planetWorld.worldToLocal(playerAvatar.position.clone());
+      let blocked = false;
+      for (const zone of surfaceCollisionZones) {
+        const center = zone.center;
+        const dx = candidateLocal.x - center.x;
+        const dy = candidateLocal.y - center.y;
+        const dz = candidateLocal.z - center.z;
+        if (dx * dx + dy * dy + dz * dz < zone.radius * zone.radius) {
+          blocked = true;
+          break;
+        }
+      }
+      if (blocked) playerAvatar.position.copy(previousPosition);
+      const surface = sampleSurface(playerAvatar.position);
+      playerAvatar.position.copy(surface.position);
+      playerUp.copy(surface.up);
+      playerHeading.addScaledVector(playerUp, -playerHeading.dot(playerUp)).normalize();
+    } else {
+      const surface = sampleSurface(playerAvatar.position);
+      playerAvatar.position.copy(surface.position);
+      playerUp.copy(surface.up);
+      playerHeading.addScaledVector(playerUp, -playerHeading.dot(playerUp)).normalize();
+    }
+
+    orientAvatar();
+
+    const desired = playerAvatar.position.clone()
+      .addScaledVector(playerUp, 5.2)
+      .addScaledVector(playerHeading, -9.5);
+    camera.position.lerp(desired, 1 - Math.pow(0.0008, delta));
+
+    playerCameraTarget.copy(playerAvatar.position)
+      .addScaledVector(playerUp, 1.25)
+      .addScaledVector(playerHeading, 2.4);
+    camera.up.copy(playerUp);
+    camera.lookAt(playerCameraTarget);
+
+    const footPhase = document.getElementById("kr-phase");
+    const footLocation = document.getElementById("kr-location");
+    const footSpeed = document.getElementById("kr-speed");
+    if (footPhase) footPhase.textContent = "MODE: ON FOOT // HAVEN";
+    if (footLocation) footLocation.textContent = "LOCATION: HAVEN SURFACE";
+    if (footSpeed) footSpeed.textContent = "MOVEMENT: " + (walk ? "WALKING" : "STANDING");
+  }
+
+  function updateLanding(delta) {
+    if (landingState !== "approach" || !landingTarget || !landingNormal || !landingDestination) return false;
+
+    // Recompute the pad's world-space frame as Haven slowly rotates.
+    landingMarker.getWorldPosition(landingTarget);
+    landingMarker.getWorldQuaternion(landingQuaternion);
+    landingNormal.set(0, 1, 0).applyQuaternion(landingQuaternion).normalize();
+    landingDestination.copy(landingTarget).addScaledVector(landingNormal, 2.4);
+
+    const distance = ship.position.distanceTo(landingDestination);
+    const travelStep = Math.min(1, (24 * delta) / Math.max(distance, 0.001));
+    ship.position.lerp(landingDestination, travelStep);
+
+    // Keep the ship's local up axis aligned with the landing surface.
+    ship.quaternion.slerp(landingQuaternion, 1 - Math.pow(0.0008, delta));
+
+    velocity.x = velocity.y = velocity.z = 0;
+
+    if (distance < 0.16 && ship.quaternion.angleTo(landingQuaternion) < 0.035) {
+      ship.position.copy(landingDestination);
+      ship.quaternion.copy(landingQuaternion);
+      landingState = "landed";
+      if (landingButton) {
+        landingButton.textContent = "LANDED ON HAVEN";
+        landingButton.disabled = true;
+        landingButton.style.opacity = "1";
+      }
+      if (disembarkButton) disembarkButton.style.display = "block";
+      setStatus("TOUCHDOWN CONFIRMED // HAVEN LANDING PAD");
+    }
+    return true;
+  }
+
+  function updateFlight(delta) {
+    if (landingState === "landed") {
+      velocity.x = velocity.y = velocity.z = 0;
+      cameraOffset.set(0, 12, 25).applyQuaternion(ship.quaternion);
+      desiredCamera.copy(ship.position).add(cameraOffset);
+      camera.position.lerp(desiredCamera, 1 - Math.pow(0.001, delta));
+      lookTarget.copy(ship.position).addScaledVector(landingNormal, 5);
+      camera.lookAt(lookTarget);
+      return;
+    }
+
+    if (landingState === "approach") {
+      updateLanding(delta);
+    } else {
+    if (keys.a) {
+      ship.rotation.y += delta * 0.8;
+    }
+
+    if (keys.d) {
+      ship.rotation.y -= delta * 0.8;
+    }
+
+    if (keys.arrowup) {
+      ship.rotation.x += delta * 0.6;
+    }
+
+    if (keys.arrowdown) {
+      ship.rotation.x -= delta * 0.6;
+    }
+
+    if (keys.q) {
+      ship.rotation.z += delta * 0.7;
+    }
+
+    if (keys.e) {
+      ship.rotation.z -= delta * 0.7;
+    }
+
+    ship.getWorldDirection(forward);
+
+    if (keys.w) {
+      velocity.x +=
+        forward.x * CONFIG.acceleration * delta;
+
+      velocity.y +=
+        forward.y * CONFIG.acceleration * delta;
+
+      velocity.z +=
+        forward.z * CONFIG.acceleration * delta;
+    }
+
+    if (keys.s) {
+      velocity.x -=
+        forward.x * CONFIG.acceleration * delta;
+
+      velocity.y -=
+        forward.y * CONFIG.acceleration * delta;
+
+      velocity.z -=
+        forward.z * CONFIG.acceleration * delta;
+    }
+
+    // Space friction
+
+    const friction = Math.pow(
+      0.985,
+      delta * 60
+    );
+
+    velocity.x *= friction;
+    velocity.y *= friction;
+    velocity.z *= friction;
+
+    const speed = Math.sqrt(
+      velocity.x * velocity.x +
+      velocity.y * velocity.y +
+      velocity.z * velocity.z
+    );
+
+    if (speed > CONFIG.maximumSpeed) {
+      const scale = CONFIG.maximumSpeed / speed;
+
+      velocity.x *= scale;
+      velocity.y *= scale;
+      velocity.z *= scale;
+    }
+
+    ship.position.x += velocity.x * delta;
+    ship.position.y += velocity.y * delta;
+    ship.position.z += velocity.z * delta;
+    }
+
+    // Chase camera
+
+    cameraOffset.set(0, 17, 43);
+
+    cameraOffset.applyQuaternion(
+      ship.quaternion
+    );
+
+    desiredCamera.copy(ship.position)
+      .add(cameraOffset);
+
+    camera.position.lerp(
+      desiredCamera,
+      1 - Math.pow(0.001, delta)
+    );
+
+    lookTarget.copy(ship.position)
+      .addScaledVector(forward, 45);
+
+    camera.lookAt(lookTarget);
+  }
+
+  // ============================================================
+  // HAVEN APPROACH NAVIGATION
+  // The marker is attached to Haven, so it follows the planet's
+  // slow rotation. The guidance line is updated in world space.
+  // ============================================================
+
+  function createNavigationSystem() {
+    const longitude = 0.08;
+    const latitude = 0.12;
+    const normal = new THREE.Vector3(
+      Math.cos(latitude) * Math.cos(longitude),
+      Math.sin(latitude),
+      Math.cos(latitude) * Math.sin(longitude)
+    ).normalize();
+
+    const ground = terrainProfile(
+      normal.x, normal.y, normal.z
+    ).elevation;
+
+    landingMarker = new THREE.Group();
+    landingMarker.position.copy(normal).multiplyScalar(
+      CONFIG.planetRadius + ground + 0.9
+    );
+    landingMarker.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      normal
+    );
+
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(12, 0.42, 6, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0xffc77d,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false
+      })
+    );
+    ring.rotation.x = Math.PI / 2;
+    landingMarker.add(ring);
+
+    const innerRing = new THREE.Mesh(
+      new THREE.TorusGeometry(7.2, 0.18, 5, 40),
+      new THREE.MeshBasicMaterial({
+        color: 0x8fd9e7,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false
+      })
+    );
+    innerRing.rotation.x = Math.PI / 2;
+    landingMarker.add(innerRing);
+
+    const beacon = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.22, 26, 6),
+      new THREE.MeshBasicMaterial({
+        color: 0xffc77d,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false
+      })
+    );
+    beacon.position.y = 14;
+    landingMarker.add(beacon);
+
+    const beaconTip = new THREE.Mesh(
+      new THREE.OctahedronGeometry(1.5, 0),
+      new THREE.MeshBasicMaterial({ color: 0xffe0a6 })
+    );
+    beaconTip.position.y = 28;
+    landingMarker.add(beaconTip);
+
+    planetWorld.add(landingMarker);
+
+    landingTarget = new THREE.Vector3();
+    landingNormal = normal.clone();
+    landingQuaternion = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0), normal
+    );
+    landingDestination = new THREE.Vector3();
+
+    approachLinePositions = new Float32Array(6);
+    const lineGeometry = new THREE.BufferGeometry();
+    lineGeometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(approachLinePositions, 3)
+    );
+    approachLine = new THREE.Line(
+      lineGeometry,
+      new THREE.LineBasicMaterial({
+        color: 0x8fcbd7,
+        transparent: true,
+        opacity: 0.34,
+        depthWrite: false
+      })
+    );
+    approachLine.frustumCulled = false;
+    scene.add(approachLine);
+
+    navLabel = document.createElement("div");
+    navLabel.textContent = "▼ HAVEN LANDING SITE";
+    Object.assign(navLabel.style, {
+      position: "absolute",
+      zIndex: "18",
+      display: "none",
+      padding: "5px 8px",
+      color: "#ffe0a6",
+      background: "rgba(5,12,22,.72)",
+      border: "1px solid rgba(255,199,125,.55)",
+      borderRadius: "3px",
+      font: "bold 10px monospace",
+      letterSpacing: "1px",
+      whiteSpace: "nowrap",
+      pointerEvents: "none",
+      textShadow: "0 1px 4px #000",
+      transform: "translate(-50%,-50%)"
+    });
+    root.appendChild(navLabel);
+  }
+
+  function updateNavigation() {
+    if (onFoot) {
+      if (approachLine) approachLine.visible = false;
+      if (navLabel) navLabel.style.display = "none";
+      return;
+    }
+    if (!landingMarker || !landingTarget || !ship || !camera) return;
+
+    landingMarker.getWorldPosition(landingTarget);
+
+    approachLinePositions[0] = ship.position.x;
+    approachLinePositions[1] = ship.position.y;
+    approachLinePositions[2] = ship.position.z;
+    approachLinePositions[3] = landingTarget.x;
+    approachLinePositions[4] = landingTarget.y;
+    approachLinePositions[5] = landingTarget.z;
+
+    const positionAttribute = approachLine.geometry.attributes.position;
+    positionAttribute.needsUpdate = true;
+    approachLine.geometry.computeBoundingSphere();
+
+    const projected = landingTarget.clone().project(camera);
+    const inFront = projected.z > -1 && projected.z < 1;
+    if (inFront) {
+      const margin = 34;
+      const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+      const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+      navLabel.style.display = "block";
+      navLabel.style.left = Math.max(margin, Math.min(window.innerWidth - margin, x)) + "px";
+      navLabel.style.top = Math.max(margin, Math.min(window.innerHeight - margin, y - 24)) + "px";
+      navLabel.textContent = "▼ HAVEN LANDING SITE";
+    } else {
+      navLabel.style.display = "none";
+    }
+
+    const targetDistance = ship.position.distanceTo(landingTarget);
+    if (landingButton) {
+      const ready = targetDistance <= 220 && landingState === "idle";
+      landingButton.disabled = !(ready || landingState === "approach");
+      landingButton.style.opacity = landingButton.disabled ? "0.48" : "1";
+      if (landingState === "approach") {
+        landingButton.textContent = "ABORT LANDING";
+      } else if (landingState === "landed") {
+        landingButton.textContent = "LANDED ON HAVEN";
+      } else {
+        landingButton.textContent = ready ? "INITIATE LANDING" : "LANDING ASSIST";
+      }
+    }
+    const targetText = document.getElementById("kr-target");
+    const phaseText = document.getElementById("kr-phase");
+    const altitude = ship.position.distanceTo(planetCenter) - CONFIG.planetRadius;
+
+    if (targetText) {
+      targetText.textContent = "LANDING SITE: " + targetDistance.toFixed(0) + " UNITS";
+    }
+
+    let phase = "DEEP SPACE";
+    if (altitude < 250) phase = "HAVEN ORBIT";
+    if (targetDistance < 180) phase = "APPROACH CORRIDOR";
+    if (targetDistance < 55) phase = "LANDING RANGE";
+    if (landingState === "approach") phase = "AUTOMATED DESCENT";
+    if (landingState === "landed") phase = "LANDED // PAD SECURE";
+    if (onFoot) phase = "ON FOOT // HAVEN";
+
+    if (phaseText) {
+      phaseText.textContent = "FLIGHT PHASE: " + phase;
+    }
+
+    if (approachLine.material) {
+      approachLine.material.opacity = targetDistance < 220 ? 0.72 : 0.22;
+    }
+  }
+
+  // ============================================================
+  // HUD UPDATES
+  // ============================================================
+
+  function updateHUD() {
+    const distance = ship.position.distanceTo(planetCenter);
+
+    const altitude =
+      distance - CONFIG.planetRadius;
+
+    const location =
+      document.getElementById("kr-location");
+
+    const speed =
+      document.getElementById("kr-speed");
+
+    const distanceText =
+      document.getElementById("kr-distance");
+
+    const moonText =
+      document.getElementById("kr-moon");
+
+    const status =
+      document.getElementById("kr-status");
+
+    if (!location) return;
+
+    if (onFoot) {
+      location.textContent = "LOCATION: HAVEN SURFACE";
+      speed.textContent = "MOVEMENT: " + ((keys.w || keys.s) ? "WALKING" : "STANDING");
+      distanceText.textContent = "EXPLORATION: ON FOOT";
+      if (moonText && moonOrbit) {
+        moonText.textContent = "LUNA: " + moonOrbit.rotation.y.toFixed(2) + " ORBIT";
+      }
+      status.textContent = "SURFACE EXPLORATION // HAVEN";
+      return;
+    }
+
+    const currentSpeed = Math.sqrt(
+      velocity.x * velocity.x +
+      velocity.y * velocity.y +
+      velocity.z * velocity.z
+    );
+
+    speed.textContent =
+      "VELOCITY: " + currentSpeed.toFixed(1);
+
+    distanceText.textContent =
+      "HAVEN: " + altitude.toFixed(0) + " UNITS";
+
+    if (moonText && moonOrbit) {
+      moonText.textContent =
+        "LUNA: " + moonOrbit.rotation.y.toFixed(2) + " ORBIT";
+    }
+
+    if (altitude < 35) {
+      location.textContent =
+        "LOCATION: HAVEN APPROACH";
+
+      status.textContent =
+        "DESTINATION IN RANGE";
+
+    } else if (altitude < 250) {
+      location.textContent =
+        "LOCATION: HAVEN ORBIT";
+
+      status.textContent =
+        "APPROACHING VIDEO WORLD";
+
+    } else {
+      location.textContent =
+        "LOCATION: DEEP SPACE";
+
+      status.textContent =
+        "SYSTEM ONLINE";
+    }
+  }
+
+  // ============================================================
+  // MAIN INITIALIZATION
+  // ============================================================
+
+  async function initialize() {
+    try {
+      THREE = await loadThree();
+
+      if (destroyed) return;
+
+      // Allocate Three.js objects after THREE is available.
+      forward = new THREE.Vector3();
+      cameraOffset = new THREE.Vector3();
+      desiredCamera = new THREE.Vector3();
+      lookTarget = new THREE.Vector3();
+      planetCenter = new THREE.Vector3(...CONFIG.planetPosition);
+
+      setStatus("INITIALIZING WEBGL");
+
+      // Scene
+
+      scene = new THREE.Scene();
+
+      scene.background = new THREE.Color(
+        CONFIG.background
+      );
+
+      scene.fog = new THREE.FogExp2(
+        CONFIG.background,
+        0.000022
+      );
+
+      // Camera
+
+      camera = new THREE.PerspectiveCamera(
+        65,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        10000
+      );
+
+      // Renderer
+
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        powerPreference: "high-performance"
+      });
+
+      renderer.setPixelRatio(
+        Math.min(
+          window.devicePixelRatio || 1,
+          1.5
+        )
+      );
+
+      renderer.setSize(
+        window.innerWidth,
+        window.innerHeight
+      );
+
+      renderer.outputColorSpace =
+        THREE.SRGBColorSpace;
+
+      renderer.toneMapping =
+        THREE.ACESFilmicToneMapping;
+
+      renderer.toneMappingExposure = 1.32;
+
+      renderer.domElement.style.cssText =
+        "position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1";
+
+      root.insertBefore(
+        renderer.domElement,
+        hud
+      );
+
+      // Lighting
+
+      scene.add(
+        new THREE.AmbientLight(
+          0xc2b8d8,
+          1.55
+        )
+      );
+
+      // Generate universe
+
+      createStarfield();
+      createSun();
+      planetWorld = createPlanet();
+      createNavigationSystem();
+      createMoon();
+      createStation();
+      createAsteroidBelt();
+
+      // Generate player ship
+
+      ship = createShip();
+      createOnFootAvatar();
+
+      // Initial camera
+
+      camera.position.set(0, 17, -345);
+
+      camera.lookAt(ship.position);
+
+      // Resize handling
+
+      function resize() {
+        if (!renderer || !camera) return;
+
+        camera.aspect =
+          window.innerWidth /
+          window.innerHeight;
+
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(
+          window.innerWidth,
+          window.innerHeight
+        );
+      }
+
+      window.addEventListener(
+        "resize",
+        resize
+      );
+
+      cleanup.push(() => {
+        window.removeEventListener(
+          "resize",
+          resize
+        );
+      });
+
+      setStatus(
+        "UNIVERSE GENERATED // FLIGHT SYSTEM ONLINE"
+      );
+
+      const statusElement =
+        document.getElementById("kr-status");
+
+      if (statusElement) {
+        statusElement.textContent =
+          "SYSTEM ONLINE";
+      }
+
+      // ========================================================
+      // RENDER LOOP
+      // ========================================================
+
+      function animate(time) {
+        if (destroyed) return;
+
+        animationFrame =
+          requestAnimationFrame(animate);
+
+        const delta = lastTime
+          ? Math.min(
+              (time - lastTime) / 1000,
+              0.05
+            )
+          : 0;
+
+        lastTime = time;
+
+        if (onFoot) updateOnFoot(delta);
+        else updateFlight(delta);
+        updateNavigation();
+
+        if (stationRing) stationRing.rotation.z += delta * 0.11;
+        if (asteroidBelt) asteroidBelt.rotation.y += delta * 0.0018;
+        if (moonOrbit) moonOrbit.rotation.y += delta * 0.006;
+        if (planetWorld) planetWorld.rotation.y += delta * 0.00035;
+
+        updateHUD();
+
+        renderer.render(scene, camera);
+      }
+
+      animationFrame =
+        requestAnimationFrame(animate);
+
+    } catch (error) {
+      console.error(
+        "[Kepler Reach] Initialization failed:",
+        error
+      );
+
+      setStatus(
+        "ENGINE ERROR: " + error.message,
+        true
+      );
+
+      const statusElement =
+        document.getElementById("kr-status");
+
+      if (statusElement) {
+        statusElement.textContent =
+          "RENDERER INITIALIZATION FAILED";
+      }
+    }
+  }
+
+  // ============================================================
+  // PUBLIC API
+  // ============================================================
+
+  window.KeplerReach = {
+    version: CONFIG.version,
+    seed: CONFIG.seed,
+
+    destroy() {
+      destroyed = true;
+
+      cancelAnimationFrame(animationFrame);
+
+      cleanup.forEach(fn => fn());
+
+      if (renderer) {
+        renderer.dispose();
+
+        renderer.domElement.remove();
+      }
+
+      if (navLabel && navLabel.parentNode) navLabel.remove();
+      if (landingButton && landingButton.parentNode) landingButton.remove();
+      if (disembarkButton && disembarkButton.parentNode) disembarkButton.remove();
+      if (boardShipButton && boardShipButton.parentNode) boardShipButton.remove();
+
+      if (scene) {
+        scene.traverse(object => {
+          if (object.geometry) {
+            object.geometry.dispose();
+          }
+
+          if (object.material) {
+            const materials = Array.isArray(
+              object.material
+            )
+              ? object.material
+              : [object.material];
+
+            materials.forEach(material => {
+              material.dispose();
+            });
+          }
+        });
+      }
+
+      root.remove();
+
+      delete window.KeplerReach;
+    }
+  };
+
+  // Start
+
+  initialize();
+
+})();
