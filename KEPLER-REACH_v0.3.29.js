@@ -505,7 +505,7 @@
     if (cameraButton) {
       cameraButton.textContent = onFoot
         ? (cameraMode === "first" ? "CAMERA: THIRD PERSON" : "CAMERA: FIRST PERSON")
-        : (cameraMode === "first" ? "CAMERA: THIRD PERSON" : "CAMERA: COCKPIT");
+        : (cameraMode === "first" ? "VIEW: CHASE" : "VIEW: COCKPIT");
     }
     const label = cameraMode === "first"
       ? (onFoot ? "FIRST-PERSON EXPLORATION" : "COCKPIT VIEW")
@@ -2239,7 +2239,7 @@
     if (!ship || !camera || !planetCenter) return;
     landingState = "idle";
     onFoot = false;
-    cameraMode="third";recenterCamera();if(cameraButton){cameraButton.style.display="block";cameraButton.textContent="CAMERA: THIRD PERSON";}if(lookPad)lookPad.style.display="grid";if(mobile)mobile.style.display="block";
+    cameraMode="third";recenterCamera();if(cameraButton){cameraButton.style.display="block";cameraButton.textContent="VIEW: COCKPIT";}if(lookPad)lookPad.style.display="grid";if(mobile)mobile.style.display="block";
     buggyMode = false; buggySpeed = 0;
     avatarIsWalking = false;
     avatarIsWalking=false;
@@ -2413,7 +2413,7 @@
     clearKeys();
 
     if (boardShipButton) boardShipButton.style.display = "none";
-    if (cameraButton) { cameraButton.style.display = "block"; cameraButton.textContent = cameraMode === "first" ? "CAMERA: THIRD PERSON" : "CAMERA: COCKPIT"; }
+    if (cameraButton) { cameraButton.style.display = "block"; cameraButton.textContent = cameraMode === "first" ? "VIEW: CHASE" : "VIEW: COCKPIT"; }
     if (mobile) mobile.style.display = "block";
     if (lookPad) lookPad.style.display = "grid";
     // Disembark is only available after the next confirmed touchdown.
@@ -2744,7 +2744,7 @@
       camera.up.copy(worldUp);
       camera.position.lerp(worldPosition, 1 - Math.pow(0.00008, delta));
       camera.lookAt(target);
-      if (cameraButton) cameraButton.textContent = "CAMERA: COCKPIT";
+      if (cameraButton) cameraButton.textContent = "VIEW: CHASE";
     } else {
       const horizontalForward = worldForward.clone();
       horizontalForward.y = 0;
@@ -2757,7 +2757,7 @@
       camera.position.lerp(desiredCamera, 1 - Math.pow(0.00008, delta));
       lookTarget.copy(ship.position).addScaledVector(worldForward, 7);
       camera.lookAt(lookTarget);
-      if (cameraButton) cameraButton.textContent = "CAMERA: THIRD PERSON";
+      if (cameraButton) cameraButton.textContent = "VIEW: COCKPIT";
     }
   }
 
