@@ -2129,8 +2129,8 @@
       buggyInteractButton.textContent="ENTER MOON BUGGY";
     }
 
-    cameraYaw+=lookInputX*1.75*delta;
-    cameraPitch=THREE.MathUtils.clamp(cameraPitch+lookInputY*1.15*delta,-0.12,0.88);
+    cameraYaw-=lookInputX*1.75*delta;
+    cameraPitch=THREE.MathUtils.clamp(cameraPitch-lookInputY*1.15*delta,-0.12,0.88);
     playerCameraTarget.copy(playerAvatar.position).addScaledVector(playerUp,1.35);
     camera.up.copy(playerUp);
     if(cameraMode==="first"){
