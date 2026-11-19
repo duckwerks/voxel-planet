@@ -2737,7 +2737,7 @@
     const worldForward = new THREE.Vector3(0, 0, -1)
       .applyQuaternion(ship.getWorldQuaternion(new THREE.Quaternion())).normalize();
     if (cameraMode === "first") {
-      const worldPosition = ship.localToWorld(new THREE.Vector3(0, 1.48, -0.62));
+      const worldPosition = ship.localToWorld(new THREE.Vector3(0, 1.8, -2.55));
       const worldUp = new THREE.Vector3(0, 1, 0)
         .applyQuaternion(ship.getWorldQuaternion(new THREE.Quaternion())).normalize();
       const target = worldPosition.clone().addScaledVector(worldForward, 65);
