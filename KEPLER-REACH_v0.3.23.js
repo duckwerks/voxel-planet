@@ -2709,10 +2709,18 @@
     const inversePlanetRotation = planetWorld.getWorldQuaternion(new THREE.Quaternion()).invert();
     const localHeading = headingWorld.clone().applyQuaternion(inversePlanetRotation).normalize();
     const normal = local.clone().normalize();
-    const longitude = Math.atan2(normal.z, normal.x);
-    const latitude = Math.asin(THREE.MathUtils.clamp(normal.y, -1, 1));
-    const east = new THREE.Vector3(-Math.sin(longitude), 0, Math.cos(longitude));
-    const north = new THREE.Vector3(-Math.sin(latitude) * Math.cos(longitude), Math.cos(latitude), -Math.sin(latitude) * Math.sin(longitude));
+    // Define north from Haven's fixed +Y axis projected onto the
+    // observer's local horizon. This avoids longitude-wrap sign changes.
+    const north = new THREE.Vector3(0, 1, 0)
+      .addScaledVector(normal, -normal.y);
+    if (north.lengthSq() < 1e-8) {
+      // Geographic north is undefined at either pole; use Haven +Z as
+      // a deterministic fallback so the compass does not jump randomly.
+      north.set(0, 0, 1).addScaledVector(normal, -normal.z);
+    }
+    north.normalize();
+    const east = normal.clone().cross(north).normalize();
+    localHeading.addScaledVector(normal, -localHeading.dot(normal)).normalize();
     const bearing = (Math.atan2(localHeading.dot(east), localHeading.dot(north)) * 180 / Math.PI + 360) % 360;
     const headings = ["N","NE","E","SE","S","SW","W","NW"];
     const compass = headings[Math.round(bearing / 45) % 8];
@@ -2720,7 +2728,7 @@
     const coordsNode = document.getElementById("kr-nav-coords");
     const headingNode = document.getElementById("kr-nav-heading");
     const shipNode = document.getElementById("kr-nav-ship");
-    if (coordsNode) coordsNode.textContent = observerLabel + "  " + coords;
+    if (coordsNode) coordsNode.textContent = "HAVEN-" + CONFIG.seed + "  " + observerLabel + "  " + coords;
     if (headingNode) headingNode.textContent = "HDG " + compass + " " + bearing.toFixed(0) + "°";
     if (shipNode) {
       if (onFoot) {
