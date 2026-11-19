@@ -121,6 +121,8 @@
   let cameraPitch = 0.32;
   let cameraMode = "third";
   let lookInputX = 0, lookInputY = 0;
+  let touchFlightYaw = 0, touchFlightPitch = 0;
+  let touchFlightThrust = 0, touchFlightStrafe = 0;
   let cameraButton = null;
   let lookPad = null;
   let landingState = "idle";
@@ -453,13 +455,13 @@
   }
   mobile.append(compassRose,moveLabel,moveArrows,moveArrowsBottom,moveArrowsLeft,moveArrowsRight,moveKnob);root.appendChild(mobile);
   let movePointerId=null;
-  function releaseMoveStick(){movePointerId=null;moveKnob.style.transform="translate(0px,0px)";keys.w=keys.a=keys.s=keys.d=keys.arrowup=keys.arrowdown=false;}
+  function releaseMoveStick(){movePointerId=null;moveKnob.style.transform="translate(0px,0px)";touchFlightYaw=touchFlightPitch=0;keys.w=keys.a=keys.s=keys.d=keys.arrowup=keys.arrowdown=false;}
   function updateMoveStick(event){
     if(movePointerId!==event.pointerId)return;
     const r=mobile.getBoundingClientRect(),dx=event.clientX-(r.left+r.width/2),dy=event.clientY-(r.top+r.height/2);
     const d=Math.hypot(dx,dy),scale=d>43?43/d:1,x=dx*scale,y=dy*scale;
     moveKnob.style.transform=`translate(${x}px,${y}px)`;
-    if(!onFoot&&!buggyMode){keys.w=keys.s=false;keys.a=x < -10;keys.d=x > 10;keys.arrowup=y < -10;keys.arrowdown=y > 10;}else{keys.w=y < -10;keys.s=y > 10;keys.a=x < -10;keys.d=x > 10;}
+    if(!onFoot&&!buggyMode){touchFlightYaw=x < -10?1:(x > 10?-1:0);touchFlightPitch=y < -10?1:(y > 10?-1:0);}else{keys.w=y < -10;keys.s=y > 10;keys.a=x < -10;keys.d=x > 10;}
   }
   mobile.addEventListener("pointerdown",e=>{if(movePointerId!==null)return;e.preventDefault();movePointerId=e.pointerId;if(mobile.setPointerCapture)mobile.setPointerCapture(e.pointerId);updateMoveStick(e);});
   mobile.addEventListener("pointermove",updateMoveStick);
@@ -480,8 +482,8 @@
   for(const item of lookButtons){
     const b=document.createElement("button");b.type="button";b.textContent=item.label;
     Object.assign(b.style,{gridRow:item.r,gridColumn:item.c,width:"40px",height:"40px",color:"#d9edf1",background:"rgba(15,35,55,.84)",border:"1px solid #6c9aa7",borderRadius:"8px",font:"bold 18px monospace",touchAction:"none",padding:"0"});
-    const press=e=>{e.preventDefault();if(b.setPointerCapture)b.setPointerCapture(e.pointerId);if(!onFoot&&!buggyMode){keys.w=item.y<0;keys.s=item.y>0;keys.arrowleft=item.x<0;keys.arrowright=item.x>0;}else{lookInputX=item.x;lookInputY=item.y;}};
-    const release=e=>{if(e.cancelable)e.preventDefault();if(!onFoot&&!buggyMode){keys.w=keys.s=keys.arrowleft=keys.arrowright=false;}else if(lookInputX===item.x&&lookInputY===item.y){lookInputX=lookInputY=0;}};
+    const press=e=>{e.preventDefault();if(b.setPointerCapture)b.setPointerCapture(e.pointerId);if(!onFoot&&!buggyMode){touchFlightThrust=item.y<0?1:(item.y>0?-1:0);touchFlightStrafe=item.x<0?-1:(item.x>0?1:0);}else{lookInputX=item.x;lookInputY=item.y;}};
+    const release=e=>{if(e.cancelable)e.preventDefault();if(!onFoot&&!buggyMode){touchFlightThrust=touchFlightStrafe=0;}else if(lookInputX===item.x&&lookInputY===item.y){lookInputX=lookInputY=0;}};
     b.addEventListener("pointerdown",press);b.addEventListener("pointerup",release);b.addEventListener("pointercancel",release);b.addEventListener("lostpointercapture",release);
     lookPad.appendChild(b);    lookPad.appendChild(b);
   }
@@ -2737,10 +2739,10 @@
       updateLanding(delta);
     } else {
       // Aim with the joystick; translate independently with the D-pad.
-      const yawInput=(keys.a?1:0)-(keys.d?1:0);
-      const pitchInput=(keys.arrowup?1:0)-(keys.arrowdown?1:0);
-      const thrust=(keys.w?1:0)-(keys.s?1:0);
-      const strafe=(keys.arrowright?1:0)-(keys.arrowleft?1:0);
+      const yawInput=THREE.MathUtils.clamp((keys.a?1:0)-(keys.d?1:0)+touchFlightYaw,-1,1);
+      const pitchInput=THREE.MathUtils.clamp((keys.arrowup?1:0)-(keys.arrowdown?1:0)+touchFlightPitch,-1,1);
+      const thrust=THREE.MathUtils.clamp((keys.w?1:0)-(keys.s?1:0)+touchFlightThrust,-1,1);
+      const strafe=THREE.MathUtils.clamp((keys.arrowright?1:0)-(keys.arrowleft?1:0)+touchFlightStrafe,-1,1);
       ship.rotateY(yawInput*0.92*delta);
       ship.rotateX(pitchInput*0.72*delta);
       ship.getWorldDirection(forward);
