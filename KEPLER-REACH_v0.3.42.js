@@ -2507,7 +2507,7 @@
       surfaceRadius + terrain.elevation + AVATAR_SOLE_CLEARANCE
     );
     const surfaceWorld = surfaceRoot.localToWorld(surfaceLocal);
-    const worldRotation = planetWorld.getWorldQuaternion(new THREE.Quaternion());
+    const worldRotation = surfaceRoot.getWorldQuaternion(new THREE.Quaternion());
     const terrainNormalWorld = normalLocal.applyQuaternion(worldRotation).normalize();
     const radialUpWorld = radial.clone().applyQuaternion(worldRotation).normalize();
     const slope = Math.acos(THREE.MathUtils.clamp(terrainNormalWorld.dot(radialUpWorld), -1, 1));
@@ -2755,8 +2755,9 @@
     orientAvatar(); buggyMode=false; buggySpeed=0; avatarIsWalking=false; playerAvatar.visible=cameraMode==="third";
     if(cameraButton){cameraButton.style.display="block";cameraButton.textContent=cameraMode==="first"?"VIEW: FIRST PERSON":"VIEW: THIRD PERSON";}if(lookPad)lookPad.style.display="grid";if(mobile)mobile.style.display="block";
     buggyInteractButton.style.display="none"; if(boardShipButton)boardShipButton.style.display="block";
-    clearKeys(); setStatus("ON FOOT // HAVEN SURFACE");
-    showModeHint("ON FOOT  //  HAVEN SURFACE");
+    const bodyName=activeSurfaceBody==="moon"?"LUNA":"HAVEN";
+    clearKeys(); setStatus("ON FOOT // "+bodyName+" SURFACE");
+    showModeHint("ON FOOT  //  "+bodyName+" SURFACE");
   }
 
   function updateBuggy(delta) {
@@ -3316,7 +3317,7 @@
       ? "LAT " + (polarLatitude ? (lat >= 0 ? "90.0000° N" : "90.0000° S") : Math.abs(lat).toFixed(4) + "° " + (lat >= 0 ? "N" : "S")) + "  LON " + (polarLatitude ? "POLAR" : Math.abs(lon).toFixed(4) + "° " + (lon >= 0 ? "E" : "W"))
       : "SPACE X " + observerWorld.x.toFixed(0) + " Y " + observerWorld.y.toFixed(0) + " Z " + observerWorld.z.toFixed(0);
 
-    const inversePlanetRotation = planetWorld.getWorldQuaternion(new THREE.Quaternion()).invert();
+    const inversePlanetRotation = coordinateRoot.getWorldQuaternion(new THREE.Quaternion()).invert();
     const localHeading = headingWorld.clone().applyQuaternion(inversePlanetRotation).normalize();
     const normal = local.clone().normalize();
     // Define north from Haven's fixed +Y axis projected onto the
@@ -3339,7 +3340,7 @@
     const headingNode = document.getElementById("kr-nav-heading");
     const xyzNode = document.getElementById("kr-nav-xyz");
     const shipNode = document.getElementById("kr-nav-ship");
-    if (coordsNode) coordsNode.textContent = "HAVEN-" + CONFIG.seed + "  " + observerLabel + "  " + coords;
+    if (coordsNode) coordsNode.textContent = (onFoot && activeSurfaceBody === "moon" ? "LUNA-" : "HAVEN-") + CONFIG.seed + "  " + observerLabel + "  " + coords;
     if (headingNode) headingNode.textContent = "HDG " + compass + " " + bearing.toFixed(0) + "°";
     if (xyzNode) {
       xyzNode.textContent = "WORLD XYZ  " +
