@@ -1623,7 +1623,7 @@
     const antenna=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.05,1,5),buggyTrim); antenna.position.set(0.72,3.05,0.95); buggy.add(antenna);
     const tip=new THREE.Mesh(new THREE.SphereGeometry(0.13,7,5),mat.neonMint); tip.position.set(0.72,3.58,0.95); buggy.add(tip);
     const roverFrame=surfaceFrame(20,17,0.12); buggy.position.copy(roverFrame.position); buggy.quaternion.copy(roverFrame.q);
-    district.add(buggy); surfaceCollisionZones.push({center:roverFrame.position.clone(),radius:3});
+    district.add(buggy);
     havenBuggy=buggy; buggy.userData.species="HAVEN UTILITY ROVER";
 
 
@@ -2384,8 +2384,6 @@
     if(havenBuggy){
       const oldWorld=havenBuggy.getWorldPosition(new THREE.Vector3());
       if(havenBuggy.parent)havenBuggy.parent.remove(havenBuggy);
-      const zoneIndex=surfaceCollisionZones.findIndex(z=>z.center.distanceTo(oldWorld)<4);
-      if(zoneIndex>=0)surfaceCollisionZones.splice(zoneIndex,1);
       const rn=new THREE.Vector3(0.91,0.20,0.36).normalize(), rt=moonTerrainProfile(rn.x,rn.y,rn.z);
       havenBuggy.position.copy(rn).multiplyScalar(radius+rt.elevation+0.95);
       havenBuggy.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),rn);
@@ -2800,9 +2798,6 @@
     const candidate=pos.addScaledVector(forwardLocal,buggySpeed*delta), nextNormal=candidate.clone().normalize();
     const terrain=moonTerrainProfile(nextNormal.x,nextNormal.y,nextNormal.z);
     nextNormal.multiplyScalar(CONFIG.moonRadius+terrain.elevation+0.95);
-    const buggyWorldCandidate=moonWorld.localToWorld(nextNormal.clone());
-    const buggyWorldCurrent=havenBuggy.getWorldPosition(new THREE.Vector3());
-    const ownParkingZone=surfaceCollisionZones.find(zone=>zone.center.distanceTo(buggyWorldCurrent)<zone.radius+1);
     // Luna is deliberately unobstructed: terrain is the only rover interaction.
     havenBuggy.position.copy(nextNormal);
     const nextQ=new THREE.Quaternion().setFromUnitVectors(upAxis,nextNormal.clone().normalize());
