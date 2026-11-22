@@ -3368,7 +3368,7 @@
     const luna=getJetpackBodyState(moonWorld,CONFIG.moonRadius,moonTerrainProfile,playerAvatar.position,BODY_PHYSICS.moon.gravity);
     const gravityVector=new THREE.Vector3().addScaledVector(haven.up,-haven.gravity).addScaledVector(luna.up,-luna.gravity);
     playerUp.copy(gravityVector.lengthSq()>1e-7?gravityVector.clone().normalize().negate():playerUp);
-    const turn=(keys.a?1:0)-(keys.d?1:0);if(turn)playerHeading.applyAxisAngle(playerUp,turn*1.35*dt);
+    // A/D yaw is applied once by updateOnFoot before this flight branch.
     const pitch=(keys.w?1:0)-(keys.s?1:0);
     cameraPitch=THREE.MathUtils.clamp(cameraPitch+pitch*.78*dt-lookInputY*1.15*dt,-1.35,1.35);
     cameraYaw-=lookInputX*1.45*dt;lookInputX=lookInputY=0;
