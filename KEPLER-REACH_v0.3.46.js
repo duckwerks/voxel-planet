@@ -4006,6 +4006,19 @@
       if (ranchPanel && ranchPanel.parentNode) ranchPanel.remove();
 
       modularModels.instances.forEach(instance => {
+        instance.traverse(object => {
+          if (object.geometry && typeof object.geometry.dispose === "function") {
+            object.geometry.dispose();
+          }
+          if (object.material) {
+            const materials = Array.isArray(object.material)
+              ? object.material
+              : [object.material];
+            materials.forEach(material => {
+              if (material && typeof material.dispose === "function") material.dispose();
+            });
+          }
+        });
         if (instance.parent) instance.parent.remove(instance);
       });
       modularModels.instances.clear();
