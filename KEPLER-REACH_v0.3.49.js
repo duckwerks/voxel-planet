@@ -3966,6 +3966,14 @@
     if (!location) return;
 
     if (onFoot) {
+      if (playerInSpaceFlight) {
+        const jetSpeed = playerFlightVelocity ? playerFlightVelocity.length() : 0;
+        location.textContent = "LOCATION: PERSONAL FLIGHT";
+        speed.textContent = "JETPACK VELOCITY: " + jetSpeed.toFixed(1) + " M/S";
+        distanceText.textContent = "HAVEN RANGE: " + playerAvatar.position.distanceTo(planetCenter).toFixed(0) + " UNITS";
+        status.textContent = "JETPACK FLIGHT // " + (explorerEquipment.thrusting ? "BOOSTING" : "COASTING");
+        return;
+      }
       location.textContent = "LOCATION: " + (activeSurfaceBody === "moon" ? "LUNA SURFACE" : "HAVEN SURFACE");
       speed.textContent = "MOVEMENT: " + ((keys.w || keys.s) ? "WALKING" : "STANDING");
       distanceText.textContent = "EXPLORATION: ON FOOT";
