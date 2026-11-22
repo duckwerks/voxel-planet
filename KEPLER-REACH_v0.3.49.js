@@ -3403,7 +3403,7 @@
       if(loc)loc.textContent="LOCATION: "+phase;if(sp)sp.textContent="JETPACK VELOCITY: "+speed.toFixed(1)+" M/S";
       if(dist)dist.textContent="HAVEN RANGE: "+range.toFixed(0)+" UNITS";if(ph)ph.textContent="FLIGHT MODE: "+phase;
     }else{
-      activeSurfaceBody=landingBody;const loc=document.getElementById("kr-location");
+      const loc=document.getElementById("kr-location");
       if(loc)loc.textContent="LOCATION: "+(landingBody==="moon"?"LUNA SURFACE":"HAVEN SURFACE");
     }
     playerCameraTarget.copy(playerAvatar.position).addScaledVector(playerUp,1.35);camera.up.copy(playerUp);
