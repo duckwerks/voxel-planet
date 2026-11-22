@@ -3632,7 +3632,8 @@
           updateNavigation();
           if (stationRing) stationRing.rotation.z += delta * 0.11;
           if (asteroidBelt) asteroidBelt.rotation.y += delta * 0.0018;
-          if (moonOrbit) moonOrbit.rotation.y += delta * 0.006;
+          // Keep the moon stationary relative to an explorer or landed ship.
+          if (moonOrbit && activeLandingBody !== "moon" && activeSurfaceBody !== "moon" && landingState === "idle") moonOrbit.rotation.y += delta * 0.006;
           // Keep Haven geographic coordinates stable between clients.
           // Re-enable visual spin only when tied to a shared network clock.
           updateHUD();
