@@ -2547,7 +2547,7 @@
       if(activeShipModel)disposeWorkshopObject(activeShipModel);
       if(modelWorkshopPreview.parent)modelWorkshopPreview.parent.remove(modelWorkshopPreview);
       modelWorkshopPreview.position.set(0,0,0);
-      modelWorkshopPreview.scale.setScalar(1);
+      // Preserve the workshop size and orientation adjustments when parenting to the ship root.
       shipVisualRoot.add(modelWorkshopPreview);
       if(shipProceduralVisual)shipProceduralVisual.visible=false;
       activeShipModel=modelWorkshopPreview;
