@@ -3391,7 +3391,7 @@
     } else {
       if (walk) {playerMove.copy(playerHeading).multiplyScalar(moveDistance*(explorerEquipment.jetpackEnabled?1.35:1));playerAvatar.position.add(playerMove);}
       const projectedGround = sampleSurface(playerAvatar.position);
-      if(explorerEquipment.jetpackEnabled&&keys.space&&explorerEquipment.fuel>0)playerVerticalSpeed=Math.min(11.5,playerVerticalSpeed+(gravity+17.5)*delta);
+      if(explorerEquipment.jetpackEnabled&&keys.space&&explorerEquipment.fuel>0)playerVerticalSpeed=Math.min(11.5,playerVerticalSpeed+Math.max(0,24-gravity)*delta);
       else playerVerticalSpeed-=gravity*delta;
       playerAirHeight += playerVerticalSpeed * delta;
       if (playerAirHeight <= 0 && playerVerticalSpeed <= 0) {
