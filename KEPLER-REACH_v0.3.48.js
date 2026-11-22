@@ -3,7 +3,7 @@
   "use strict";
 
   // ============================================================
-  // KEPLER REACH 0.3.46
+  // KEPLER REACH 0.3.48
   // Procedural 3D Universe for CyTube
   //
   // Author: Elwood Edwards
@@ -35,6 +35,8 @@
   // - Terrain and obstacle checks for the moon buggy
   // - Visible initialization diagnostics
   // - Modular GLB/glTF model registry and lazy loader
+  // - Explorer jetpack with local-gravity thrust, fuel and twin exhaust effects
+  // - Hand-held ray gun with first-person aiming and harmless practice targets
   // - In-game local GLB workshop with preview, scale/orientation controls and ship replacement
   // - Model scale/pivot normalization and named attachment sockets
   // - Procedural fallbacks retained for all current vehicles and characters
@@ -350,7 +352,7 @@
       letter-spacing:3px;
     ">KEPLER REACH</div>
 
-    <div>PROCEDURAL UNIVERSE // BUILD 0.3.16</div>
+    <div>PROCEDURAL UNIVERSE // BUILD 0.3.48</div>
 
     <div id="kr-location">LOCATION: INITIALIZING</div>
     <div id="kr-speed">VELOCITY: 0</div>
