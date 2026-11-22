@@ -164,7 +164,7 @@
     for(let i=1;i<=steps;i++){
       const candidate=sampleSurface(fromPosition.clone().addScaledVector(movement,i/steps));
       const rise=candidate.terrain.elevation-accepted.terrain.elevation;
-      const uphill=candidate.gravity.clone().negate().dot(movement)>0;
+      const uphill=rise>0;
       if(uphill&&candidate.slopeDegrees>WORLD_SCALE.maxWalkSlopeDegrees)break;
       if(rise>PLAYER_CAPSULE.maxStepHeight)break;
       accepted=candidate;
