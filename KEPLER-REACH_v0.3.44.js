@@ -2942,8 +2942,19 @@
       if (walk) {
         playerMove.copy(playerHeading).multiplyScalar(moveDistance);
         const previousPosition = playerAvatar.position.clone();
+        const previousSurface = sampleSurface(previousPosition);
         const surface = resolveSurfaceStep(previousPosition, previousPosition.clone().add(playerMove));
-        playerAvatar.position.copy(surface.position);
+        const drop = previousSurface.terrain.elevation - surface.terrain.elevation;
+        if (drop > 0.85) {
+          // A sudden drop is a ledge, not a downhill wall: move beyond its edge
+          // while retaining the old altitude, then let gravity carry the player.
+          playerAirHeight = drop;
+          playerVerticalSpeed = 0;
+          playerGrounded = false;
+          playerAvatar.position.copy(surface.position).addScaledVector(surface.up, drop);
+        } else {
+          playerAvatar.position.copy(surface.position);
+        }
         playerUp.copy(surface.up);
       } else {
         playerAvatar.position.copy(currentSurface.position);
