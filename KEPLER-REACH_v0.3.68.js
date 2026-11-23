@@ -704,7 +704,7 @@
     boostHeld=false;boostPointerId=null;keys.space=false;
     boostButton.style.filter="none";
     boostButton.style.background="linear-gradient(180deg,rgba(26,83,91,.98),rgba(8,35,48,.98))";
-    boostButton.textContent="BOOST";
+    boostButton.textContent="🚀";
   };
   // Pointer Events cover touch, pen and mouse without double-firing
   // separate touchstart/mousedown handlers on modern mobile browsers.
