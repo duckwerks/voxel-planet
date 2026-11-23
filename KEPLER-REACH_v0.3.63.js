@@ -2885,7 +2885,7 @@
     box(.25,.2,13,neon,41.78,13.05,0);
     for(const x of [55,105,140]){cyl(.16,.24,8,dark,x,9.5,-39,8);const lamp=new THREE.PointLight(0xffc77d,1.2,26);lamp.position.set(x,14,-39);diner.add(lamp);cyl(.34,.34,.22,neon,x,13.65,-39,8);}
     diner.userData.exterior={name:"Last Stop Orbital Parking Apron",bounds:{minX:38,maxX:154,minZ:-47,maxZ:47},parkingPads:[82,116,145]};
-    diner.userData.hangarPosition=new THREE.Vector3(82,6,0);
+    diner.userData.hangarPosition=new THREE.Vector3(82,7.3,0);
     function part(g,geo,m,x,y,z){const o=new THREE.Mesh(geo,m);o.position.set(x,y,z);g.add(o);return o;}
     // Beef, the grease-loving alien bear cook.
     const beef=new THREE.Group();beef.name="KR_NPC_BEEF";beef.position.set(-5,5.92,-16);diner.add(beef);
@@ -4482,7 +4482,7 @@
       playerUp.set(0,1,0);playerHeading.set(0,0,-1);playerFlightForward.copy(playerHeading);
       playerGrounded=true;playerVerticalSpeed=0;playerAirHeight=0;onFoot=true;stationInteriorMode=true;landingState="idle";
       orientAvatar();
-      ship.position.copy(stationGroup.localToWorld(new THREE.Vector3(82,6,0)));
+      ship.position.copy(stationGroup.localToWorld(new THREE.Vector3(82,7.3,0)));
       ship.rotation.y=Math.PI/2;
       createModelWorkshop();
       cameraMode="third";
