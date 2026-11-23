@@ -681,9 +681,10 @@
   Object.assign(boostButton.style,{position:"absolute",right:"18px",bottom:"176px",zIndex:"63",width:"142px",height:"54px",maxWidth:"calc(50vw - 24px)",boxSizing:"border-box",display:"none",justifyContent:"center",alignItems:"center",padding:"8px 6px",fontSize:"13px",fontWeight:"bold",letterSpacing:"1px",borderWidth:"2px",borderRadius:"12px",background:"linear-gradient(180deg,rgba(26,83,91,.98),rgba(8,35,48,.98))",boxShadow:"0 2px 14px rgba(0,0,0,.45),inset 0 1px rgba(255,255,255,.12)",touchAction:"none",userSelect:"none",WebkitUserSelect:"none"});
   let boostHeld=false,boostPointerId=null;
   const boostStart=e=>{
-    if(!onFoot||buggyMode||!explorerEquipment.jetpackEnabled)return;
+    if(!onFoot||buggyMode||!explorerEquipment.jetpackEnabled||boostHeld)return;
     if(e&&e.cancelable)e.preventDefault();
     boostHeld=true;boostPointerId=e&&e.pointerId!==undefined?e.pointerId:null;
+    if(e&&e.pointerId!==undefined&&boostButton.setPointerCapture)boostButton.setPointerCapture(e.pointerId);
     keys.space=true;explorerEquipment.thrusting=true;
     boostButton.style.filter="brightness(1.5)";
     boostButton.style.background="linear-gradient(180deg,rgba(53,143,151,.99),rgba(12,66,82,.99))";
@@ -699,14 +700,11 @@
     boostButton.style.background="linear-gradient(180deg,rgba(26,83,91,.98),rgba(8,35,48,.98))";
     boostButton.textContent="▲ HOLD BOOST";
   };
+  // Pointer Events cover touch, pen and mouse without double-firing
+  // separate touchstart/mousedown handlers on modern mobile browsers.
   boostButton.addEventListener("pointerdown",boostStart,{passive:false});
-  boostButton.addEventListener("touchstart",boostStart,{passive:false});
-  boostButton.addEventListener("mousedown",boostStart);
   document.addEventListener("pointerup",boostEnd,{passive:false});
   document.addEventListener("pointercancel",boostEnd,{passive:false});
-  document.addEventListener("touchend",boostEnd,{passive:false});
-  document.addEventListener("touchcancel",boostEnd,{passive:false});
-  document.addEventListener("mouseup",boostEnd);
   window.addEventListener("blur",boostEnd);
   boostButton.addEventListener("lostpointercapture",boostEnd);
   root.appendChild(boostButton);
