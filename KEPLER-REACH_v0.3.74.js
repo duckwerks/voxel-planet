@@ -3864,7 +3864,7 @@
     camera.position.copy(ship.position).addScaledVector(padUp, 12);
     lookTarget.copy(ship.position).addScaledVector(padUp, 4);
     camera.lookAt(lookTarget);
-    setStatus("BACK ABOARD // "+(activeSurfaceBody==="moon"?"LUNA":"HAVEN")+" LANDING SITE");
+    setStatus("BACK ABOARD // "+(activeLandingBody==="solar"?"SOLAR COMMONS":activeSurfaceBody==="moon"?"LUNA":"HAVEN")+" LANDING SITE");
     showModeHint("SPACECRAFT  //  FLIGHT CONTROLS");
   }
 
@@ -4600,7 +4600,7 @@
       if (landingState === "approach") {
         landingButton.textContent = "ABORT LANDING";
       } else if (landingState === "landed") {
-        landingButton.textContent = "LANDED ON "+(activeLandingBody==="moon"?"LUNA":"HAVEN");
+        landingButton.textContent = "LANDED ON "+(activeLandingBody==="moon"?"LUNA":activeLandingBody==="solar"?"SOLAR COMMONS":"HAVEN");
       } else {
         landingButton.textContent = ready ? (activeLandingBody==="moon"?"LAND ON LUNA":activeLandingBody==="solar"?"DOCK AT SOLAR COMMONS":"LAND ON HAVEN") : "LANDING ASSIST";
       }
