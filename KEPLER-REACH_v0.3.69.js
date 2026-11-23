@@ -3794,7 +3794,7 @@
       const local=station.worldToLocal(playerAvatar.position.clone());
       const inDiner=local.x>=-41&&local.x<=41&&Math.abs(local.z)<=29;
       const inApron=local.x>=38&&local.x<=154&&Math.abs(local.z)<=47;
-      if((inDiner||inApron)&&local.y<=6.9&&local.y>=4.7&&!thrusting){
+      if((inDiner||inApron)&&local.y<=6.9&&local.y>=3.5&&playerFlightVelocity.dot(new THREE.Vector3(0,1,0).applyQuaternion(station.getWorldQuaternion(new THREE.Quaternion())))<0){
         local.y=5.9;playerAvatar.position.copy(station.localToWorld(local));
         stationInteriorMode=true;
         playerUp.set(0,1,0).applyQuaternion(station.getWorldQuaternion(new THREE.Quaternion())).normalize();
@@ -3803,7 +3803,7 @@
     }
     if(!landed){
       const body=h2.altitude<=l2.altitude?"haven":"moon",state=body==="haven"?h2:l2;
-      if(state.altitude<=1.35&&playerFlightVelocity.dot(state.up)<0&&!thrusting){
+      if(state.altitude<=1.35&&playerFlightVelocity.dot(state.up)<0){
         activeSurfaceBody=body==="moon"?"moon":"haven";stationInteriorMode=false;
         const surface=sampleSurface(playerAvatar.position);
         playerAvatar.position.copy(surface.position);playerUp.copy(surface.up);
