@@ -746,7 +746,8 @@
       navReadout.style.display="none";
       hud.style.display="none";
       statusPanel.style.display="none";
-      actionButtons.style.display="none";
+      actionButtons.style.display="block";
+      for(const button of actionButtons.children)button.style.display=button===boardShipButton?"block":"none";
       modeHint.style.display="none";
     }else{
       actionButtons.style.display="";
