@@ -1331,9 +1331,9 @@
       for(let i=0;i<8;i++){const a=i*Math.PI/4;const light=new THREE.Mesh(new THREE.SphereGeometry(.24,6,5),new THREE.MeshBasicMaterial({color:0xffd18b}));light.position.set(x+Math.cos(a)*9.8,.5,Math.sin(a)*9.8);site.add(light);}
     }
     const terminalMat=makeMaterial(0x8b9b9b,{metalness:.28,roughness:.7}),terminalGlass=new THREE.MeshStandardMaterial({color:0x79c8d1,emissive:0x17454b,emissiveIntensity:.25,metalness:.4,roughness:.2});
-    const terminal=new THREE.Mesh(new THREE.BoxGeometry(25,7,12),terminalMat);terminal.position.set(0,3.35,-25);site.add(terminal);
+    const terminal=new THREE.Mesh(new THREE.BoxGeometry(25,7,12),terminalMat);terminal.userData.krSolidCollider=true;terminal.position.set(0,3.35,-25);site.add(terminal);
     const terminalWindows=new THREE.Mesh(new THREE.BoxGeometry(22,3.2,.16),terminalGlass);terminalWindows.position.set(0,4.2,-18.9);site.add(terminalWindows);
-    const portControlTower=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.8,13,7),terminalMat);portControlTower.position.set(15,6.5,-26);site.add(portControlTower);
+    const portControlTower=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.8,13,7),terminalMat);portControlTower.userData.krSolidCollider=true;portControlTower.position.set(15,6.5,-26);site.add(portControlTower);
     const towerCab=new THREE.Mesh(new THREE.BoxGeometry(5,3,5),terminalGlass);towerCab.position.set(15,12,-26);site.add(towerCab);
     const towerLight=new THREE.PointLight(0xffc77d,1.7,32);towerLight.position.set(15,14,-26);site.add(towerLight);
     for(let z=-30;z<=30;z+=10){const stripe=new THREE.Mesh(new THREE.BoxGeometry(1,.05,4),padPaint);stripe.position.set(0,.24,z);site.add(stripe);}
@@ -2092,6 +2092,7 @@
     const antenna=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.05,1,5),buggyTrim); antenna.position.set(0.72,3.05,0.95); buggy.add(antenna);
     const tip=new THREE.Mesh(new THREE.SphereGeometry(0.13,7,5),mat.neonMint); tip.position.set(0.72,3.58,0.95); buggy.add(tip);
     const roverFrame=surfaceFrame(20,17,0.12); buggy.position.copy(roverFrame.position); buggy.quaternion.copy(roverFrame.q);
+    buggy.userData.krSolidRoot=true;
     district.add(buggy);
     havenBuggy=buggy; buggy.userData.species="HAVEN UTILITY ROVER";
 
@@ -2902,9 +2903,7 @@
 
     // Main station core
 
-    stationGroup.add(
-      makeBox(18, 9, 25, 0x788c9d)
-    );
+    const stationCore=makeBox(18,9,25,0x788c9d);stationCore.userData.krSolidCollider=true;stationGroup.add(stationCore);
 
     // Central tower
 
@@ -2912,7 +2911,7 @@
       7, 17, 7, 0x9aabb8
     );
 
-    tower.position.y = 11;
+    tower.position.y = 11;tower.userData.krSolidCollider=true;
 
     stationGroup.add(tower);
 
@@ -2941,6 +2940,7 @@
         5, 4, 18, 0x536b7d
       );
 
+      dock.userData.krSolidCollider=true;
       dock.position.set(
         Math.cos(angle) * 18,
         0,
