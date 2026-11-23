@@ -724,7 +724,18 @@
       boostButton.style.display=flying?"flex":"none";
       boostButton.style.bottom=flying?"18px":"176px";
     }
-    if(lookPad)lookPad.style.display=flying?"none":"grid";
+    if(lookPad){
+      lookPad.style.display=flying?"block":"grid";
+      lookPad.style.width=flying?"40px":"142px";
+      lookPad.style.height=flying?"40px":"142px";
+      lookPad.style.right="18px";
+      lookPad.style.bottom=flying?"78px":"22px";
+      lookPad.style.gridTemplateColumns=flying?"40px":"repeat(3,40px)";
+      lookPad.style.gridTemplateRows=flying?"40px":"repeat(3,40px)";
+      for(const child of lookPad.children)child.style.display=flying&&child!==recenterButton?"none":"";
+      recenterButton.style.gridRow=flying?"1":"2";
+      recenterButton.style.gridColumn=flying?"1":"2";
+    }
     if(cameraButton)cameraButton.style.display=flying?"block":(onFoot?"none":cameraButton.style.display);
     if(aimReticle)aimReticle.style.display=visible&&!flying&&cameraMode==="first"?"block":"none";
     if(equipmentReadout){
