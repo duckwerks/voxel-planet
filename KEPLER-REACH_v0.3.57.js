@@ -731,8 +731,10 @@
       equipmentReadout.style.display=flying?"block":(visible?"block":"none");
       if(flying){
         equipmentReadout.style.top="10px";
+        equipmentReadout.style.left="12px";
+        equipmentReadout.style.transform="none";
         equipmentReadout.style.bottom="auto";
-        equipmentReadout.style.width="min(340px,calc(100% - 170px))";
+        equipmentReadout.style.width="min(260px,calc(50vw - 20px))";
         equipmentReadout.style.padding="5px 8px";
         equipmentReadout.style.fontSize="10px";
         const speed=playerFlightVelocity?playerFlightVelocity.length():0;
@@ -742,6 +744,8 @@
         statusPanel.style.display="none";
       }else{
         equipmentReadout.style.top="auto";
+        equipmentReadout.style.left="50%";
+        equipmentReadout.style.transform="translateX(-50%)";
         equipmentReadout.style.bottom="238px";
         equipmentReadout.style.width="min(520px,calc(100% - 24px))";
         equipmentReadout.style.padding="6px 9px";
@@ -3486,8 +3490,16 @@
     }else{
       // Orbit around the astronaut independently of the direction of travel.
       // Drag on the open right half of the screen to inspect the surroundings.
-      const viewForward=playerFlightForward.clone().applyAxisAngle(playerUp,flightCameraYaw);
-      const viewRight=viewForward.clone().cross(playerUp).normalize();
+      const cameraBase=playerFlightForward.clone();
+      const verticalAlignment=cameraBase.dot(playerUp);
+      if(Math.abs(verticalAlignment)>0.96){
+        cameraBase.copy(playerHeading).addScaledVector(playerUp,-playerHeading.dot(playerUp)).normalize()
+          .multiplyScalar(0.28).addScaledVector(playerUp,Math.sign(verticalAlignment)*0.96).normalize();
+      }
+      const viewForward=cameraBase.applyAxisAngle(playerUp,flightCameraYaw);
+      const viewRight=viewForward.clone().cross(playerUp);
+      if(viewRight.lengthSq()<1e-8)viewRight.copy(playerRight);
+      viewRight.normalize();
       viewForward.applyAxisAngle(viewRight,flightCameraPitch).normalize();
       const desired=playerAvatar.position.clone().addScaledVector(viewForward,-10.5).addScaledVector(playerUp,2.7);
       camera.position.lerp(desired,1-Math.pow(.00008,dt));
