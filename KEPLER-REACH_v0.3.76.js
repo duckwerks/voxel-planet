@@ -945,7 +945,7 @@
     hud.style.display = "none";
 
     if(visible){
-      statusPanel.style.display = "none";
+      // Temporary notifications remain controlled by setStatus() and its timer.
       actionButtons.style.display="flex";
       // Keep the useful on-foot actions; hide the workshop and unrelated
       // interaction buttons until the player is back aboard.
