@@ -4641,7 +4641,7 @@
 
     const projected = landingTarget.clone().project(camera);
     const inFront = projected.z > -1 && projected.z < 1;
-    if (inFront) {
+    if (inFront && cameraMode === "first") {
       const margin = 34;
       const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
       const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
