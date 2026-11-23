@@ -2897,11 +2897,11 @@
     box(82,.8,58,floor,0,5,0);box(82,1,1,teal,0,5.6,-29);box(82,1,1,teal,0,5.6,29);box(1,1,58,teal,-41,5.6,0);
     // Glass frontage overlooking the orbital dock; hinged entry is swung open.
     box(1,1,20,teal,41,5.6,-19);box(1,1,20,teal,41,5.6,19);
-    box(.18,7.8,17.6,glass,41,9.55,0);
+    box(.18,7.8,6.7,glass,41,9.55,-5.35);box(.18,7.8,6.7,glass,41,9.55,5.35);
     const doorFrame=mat(0xd5a45b,.68,.3);
     box(.28,8,.35,orange,41.35,9.55,-8.95);box(.28,8,.35,orange,41.35,9.55,8.95);
     box(.35,.5,18.2,cream,41.35,13.55,0);
-    const smallDoor=new THREE.Group();smallDoor.name="KR_LAST_STOP_GLASS_ENTRY_DOOR";smallDoor.position.set(41.22,5.62,-6.8);diner.add(smallDoor);
+    const smallDoor=new THREE.Group();smallDoor.name="KR_LAST_STOP_GLASS_ENTRY_DOOR";smallDoor.position.set(41.22,5.62,-1.9);diner.add(smallDoor);
     const doorPanel=new THREE.Mesh(new THREE.BoxGeometry(.14,6.65,3.7),glass);doorPanel.position.set(0,3.33,1.85);smallDoor.add(doorPanel);
     const doorStile=new THREE.Mesh(new THREE.BoxGeometry(.2,6.75,.16),doorFrame);doorStile.position.set(.04,3.35,3.65);smallDoor.add(doorStile);
     const doorHandle=new THREE.Mesh(new THREE.SphereGeometry(.11,8,6),doorFrame);doorHandle.position.set(.18,3.25,2.9);smallDoor.add(doorHandle);
