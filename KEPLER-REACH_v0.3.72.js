@@ -4906,7 +4906,7 @@
           updateNavigation();
           if (stationRing) stationRing.rotation.z += delta * 0.11;
       if (solarHabitatOrbit) solarHabitatOrbit.rotation.y += delta * 0.00042;
-      if (solarHabitatRing) solarHabitatRing.rotation.z += delta * 0.11;
+      if (solarHabitatRing) solarHabitatRing.rotation.y += delta * 0.56;
           if (asteroidBelt) asteroidBelt.rotation.y += delta * 0.0018;
           // Keep the moon stationary relative to an explorer or landed ship.
           if (moonOrbit && activeLandingBody !== "moon" && activeSurfaceBody !== "moon" && landingState === "idle") moonOrbit.rotation.y += delta * 0.006;
