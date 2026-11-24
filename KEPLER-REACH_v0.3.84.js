@@ -4125,7 +4125,8 @@
     for (let i=1;i<=steps;i++) {
       const candidate = fromPosition.clone().addScaledVector(movement, i/steps);
       const support = sampleFootSupport(candidate, up, {maxRise:0.55,maxDrop:1.25});
-      if (!support || support.slopeDegrees >= PLAYER_CAPSULE.verticalWallThresholdDegrees) break;
+      if (!support) return null;
+      if (support.slopeDegrees >= PLAYER_CAPSULE.verticalWallThresholdDegrees) break;
       accepted = support;
     }
     return accepted;
