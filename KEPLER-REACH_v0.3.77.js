@@ -145,7 +145,7 @@
         const distance=Math.max(.001,local.length()),altitude=distance-field.radius;
         if(altitude < -2 || altitude > field.influenceRadius)continue;
         const up=local.clone().normalize().applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion())).normalize();
-        const magnitude=field.surfaceGravity*Math.pow(field.radius/Math.max(distance,field.radius),2);
+        const magnitude=field.massKg>0?PHYSICS_G*field.massKg/Math.pow(Math.max(distance,field.radius),2):field.surfaceGravity*Math.pow(field.radius/Math.max(distance,field.radius),2);
         const c={id:field.id,kind:"radial",magnitude,up,priority:field.priority||0,altitude};
         if(!best||c.priority>best.priority||(c.priority===best.priority&&c.altitude<best.altitude))best=c;
       }
@@ -173,8 +173,8 @@
   }
   function registerCorePhysics(){
     const massFromGravity=(g,r)=>g*r*r/PHYSICS_G;
-    if(planetWorld){registerPhysicalBody(planetWorld,{id:"haven",kind:"planet",massKg:massFromGravity(BODY_PHYSICS.haven.gravity,CONFIG.planetRadius),densityKgM3:3200,material:"rock-water"});registerGravityField("haven-surface",{root:planetWorld,shape:"radial",radius:CONFIG.planetRadius,surfaceGravity:BODY_PHYSICS.haven.gravity,influenceRadius:2400,priority:1});}
-    if(moonWorld){registerPhysicalBody(moonWorld,{id:"luna",kind:"moon",massKg:massFromGravity(BODY_PHYSICS.moon.gravity,CONFIG.moonRadius),densityKgM3:2800,material:"rock"});registerGravityField("luna-surface",{root:moonWorld,shape:"radial",radius:CONFIG.moonRadius,surfaceGravity:BODY_PHYSICS.moon.gravity,influenceRadius:900,priority:1});}
+    if(planetWorld){const massKg=massFromGravity(BODY_PHYSICS.haven.gravity,CONFIG.planetRadius),densityKgM3=massKg/((4/3)*Math.PI*Math.pow(CONFIG.planetRadius,3));registerPhysicalBody(planetWorld,{id:"haven",kind:"planet",massKg,densityKgM3,material:"rock-water"});registerGravityField("haven-surface",{root:planetWorld,shape:"radial",radius:CONFIG.planetRadius,massKg,influenceRadius:2400,priority:1});}
+    if(moonWorld){const massKg=massFromGravity(BODY_PHYSICS.moon.gravity,CONFIG.moonRadius),densityKgM3=massKg/((4/3)*Math.PI*Math.pow(CONFIG.moonRadius,3));registerPhysicalBody(moonWorld,{id:"luna",kind:"moon",massKg,densityKgM3,material:"rock"});registerGravityField("luna-surface",{root:moonWorld,shape:"radial",radius:CONFIG.moonRadius,massKg,influenceRadius:900,priority:1});}
     if(station){registerPhysicalBody(station,{id:"last-stop",kind:"space-station",massKg:24000000,densityKgM3:4200,material:"steel-composite"});registerGravityField("last-stop-deck",{root:station,shape:"box",bounds:{minX:-41,maxX:154,minY:4.5,maxY:90,minZ:-47,maxZ:47},magnitude:9.8,priority:20});}
     if(solarHabitatStation){registerPhysicalBody(solarHabitatStation,{id:"solar-commons",kind:"space-station",massKg:78000000,densityKgM3:3900,material:"steel-glass"});registerGravityField("solar-commons-dock",{root:solarHabitatStation,shape:"box",bounds:{minX:46,maxX:162,minY:4.5,maxY:90,minZ:-52,maxZ:190},magnitude:9.8,priority:20});}
     if(ship)registerPhysicalBody(ship,{id:"space-rv",kind:"spacecraft",massKg:18000,densityKgM3:950,material:"aluminium-composite"});
