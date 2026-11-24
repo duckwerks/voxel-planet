@@ -2889,13 +2889,18 @@
     // Mainland coastal terminal, 92 m along the equatorial sea lane from L'Astrolabe.
     const shoreDistanceAlong=92,shoreAngle=shoreDistanceAlong/R,shoreRadius=CONFIG.planetRadius+2.1;
     const shore=new THREE.Group();shore.name="KR_HAVEN_MAINLAND_SHIPPING_DOCK";
-    shore.position.set(0,Math.sqrt(shoreRadius*shoreRadius-shoreDistanceAlong*shoreDistanceAlong)-R,-shoreDistanceAlong);
+    shore.position.set(0,shoreRadius*Math.cos(shoreAngle)-R,-shoreRadius*Math.sin(shoreAngle));
     shore.rotation.x=-shoreAngle;shore.userData.walkBounds={minX:-18,maxX:18,minZ:-17,maxZ:53,floorY:1.12,launchX:-999};
     shore.userData.krPhysicsProfile={id:"haven-shipping-dock",kind:"coastal-port",massKg:1250000,densityKgM3:820,structuralStrength:5,material:"timber-steel"};port.add(shore);havenShoreDockRoot=shore;
     const quay=new THREE.Mesh(new THREE.BoxGeometry(32,1.1,25),ivory);quay.position.set(0,.55,0);quay.userData.krSolidCollider=true;shore.add(quay);
-    const pier=new THREE.Mesh(new THREE.BoxGeometry(9,1,39),new THREE.MeshStandardMaterial({color:0x9b7951,roughness:.92}));pier.position.set(0,.5,31);pier.userData.krSolidCollider=true;shore.add(pier);
-    const pierEdge=new THREE.Mesh(new THREE.BoxGeometry(11,.42,3),steel);pierEdge.position.set(0,1.05,50.5);shore.add(pierEdge);
-    for(const x of [-13,-8,8,13])for(const z of [-8,8,24,40,49]){const pile=new THREE.Mesh(new THREE.CylinderGeometry(.28,.38,5,8),new THREE.MeshStandardMaterial({color:0x554b3c,roughness:1}));pile.position.set(x,-1.35,z);shore.add(pile);}
+    const pierWood=new THREE.MeshStandardMaterial({color:0x9b7951,roughness:.92});
+    const dockPileMat=new THREE.MeshStandardMaterial({color:0x554b3c,roughness:1});
+    for(let z=10;z<=50;z+=10){const sag=Math.sqrt(shoreRadius*shoreRadius-z*z)-shoreRadius,angle=Math.asin(z/shoreRadius),segment=new THREE.Group();segment.position.set(0,sag,z);segment.rotation.x=angle;shore.add(segment);
+      const pierDeck=new THREE.Mesh(new THREE.BoxGeometry(9,1,11),pierWood);pierDeck.position.y=.5;pierDeck.userData.krSolidCollider=true;segment.add(pierDeck);
+      for(const x of [-4.2,4.2]){const railPost=new THREE.Mesh(new THREE.CylinderGeometry(.07,.09,1.2,6),steel);railPost.position.set(x,1.1,0);segment.add(railPost);const rail=new THREE.Mesh(new THREE.BoxGeometry(.12,.12,10),steel);rail.position.set(x,1.65,0);segment.add(rail);}
+      for(const x of [-4,4])for(const zz of [-4.5,4.5]){const pile=new THREE.Mesh(new THREE.CylinderGeometry(.25,.34,4.5,8),dockPileMat);pile.position.set(x,-1.7,zz);segment.add(pile);}
+    }
+    const pierEdge=new THREE.Mesh(new THREE.BoxGeometry(11,.42,3),steel);pierEdge.position.set(0,Math.sqrt(shoreRadius*shoreRadius-50.5*50.5)-shoreRadius+1.05,50.5);shore.add(pierEdge);
     const terminal=new THREE.Mesh(new THREE.BoxGeometry(14,5.4,10),ivory);terminal.position.set(-7,3.25,-5);terminal.userData.krSolidCollider=true;shore.add(terminal);
     const terminalGlass=new THREE.Mesh(new THREE.BoxGeometry(14.2,2.2,.12),glass);terminalGlass.position.set(-7,4.1,-10.08);shore.add(terminalGlass);
     const awning=new THREE.Mesh(new THREE.BoxGeometry(16,.45,7),blue);awning.position.set(-7,6.1,-3);shore.add(awning);
@@ -2940,14 +2945,14 @@
   function updateMaritimePrompt(){
     if(!maritimeInteractButton)return;let label="",active=false;if(!onFoot||!playerInSpaceFlight||!playerAvatar){maritimeInteractButton.dataset.active="0";maritimeInteractButton.style.display="none";return;}
     if(maritimeDriving){label=maritimeDrivingType==="jetski"?"EXIT PERSONAL WATERCRAFT":"RELEASE THE HELM";active=true;}
-    else if(maritimeOnBoat){const l=maritimeBoat.worldToLocal(playerAvatar.position.clone());label=(l.z<-5.5&&l.z>-11.5&&Math.abs(l.x)<2.5)?"TAKE THE HELM":(Math.abs(maritimeBoat.position.z)>43?"DISEMBARK AT QUAI DE HAVEN":"RETURN TO L'ASTROLABE");active=true;}
+    else if(maritimeOnBoat){const l=maritimeBoat.worldToLocal(playerAvatar.position.clone());label=(l.z<-5.5&&l.z>-11.5&&Math.abs(l.x)<2.5)?"TAKE THE HELM":(Math.abs(maritimeBoat.position.z)>46?"DISEMBARK AT QUAI DE HAVEN":"RETURN TO L'ASTROLABE");active=true;}
     else if(havenPortRoot&&maritimeBoat&&maritimeJetski){const p=playerAvatar.position,bd=p.distanceTo(maritimeBoat.getWorldPosition(new THREE.Vector3())),sd=p.distanceTo(maritimeJetski.getWorldPosition(new THREE.Vector3()));if(sd<12){label="RIDE PERSONAL WATERCRAFT";active=true;}else if(bd<15){label="BOARD PASSENGER LAUNCH";active=true;}}
     maritimeInteractButton.textContent=label||"MARITIME";maritimeInteractButton.dataset.active=active?"1":"0";maritimeInteractButton.style.display=active?"block":"none";
   }
   function handleMaritimeAction(){
     if(!onFoot||!playerAvatar||playerInSpaceFlight)return;
     if(maritimeDriving){maritimeDriving=false;clearKeys();if(maritimeDrivingType==="jetski"){playerAvatar.visible=true;stationInteriorMode=true;stationWalkRoot=havenPortRoot;playerAvatar.position.copy(havenPortRoot.localToWorld(new THREE.Vector3(0,3.15,17)));playerUp.set(0,1,0).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();playerHeading.set(0,0,-1).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();}setStatus("MARITIME VEHICLE // SECURED");return;}
-    if(maritimeOnBoat){const l=maritimeBoat.worldToLocal(playerAvatar.position.clone());if(l.z<-5.5&&l.z>-11.5&&Math.abs(l.x)<2.5){maritimeDriving=true;maritimeDrivingType="boat";maritimeHeading=0;setStatus("PASSENGER LAUNCH // AT THE HELM");}else if(Math.abs(maritimeBoat.position.z)>43&&havenShoreDockRoot){maritimeOnBoat=false;stationWalkRoot=havenShoreDockRoot;const dockQ=havenShoreDockRoot.getWorldQuaternion(new THREE.Quaternion());playerAvatar.position.copy(havenShoreDockRoot.localToWorld(new THREE.Vector3(0,1.12,46)));playerUp.set(0,1,0).applyQuaternion(dockQ).normalize();playerHeading.set(0,0,-1).applyQuaternion(dockQ).normalize();playerGrounded=true;playerInSpaceFlight=false;orientAvatar();setStatus("QUAI DE HAVEN // MAINLAND SHIPPING DOCK");}else{maritimeOnBoat=false;stationWalkRoot=havenPortRoot;playerAvatar.position.copy(havenPortRoot.localToWorld(new THREE.Vector3(0,3.15,17)));playerUp.set(0,1,0).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();playerHeading.set(0,0,-1).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();setStatus("L'ASTROLABE // MARINA DECK");}return;}
+    if(maritimeOnBoat){const l=maritimeBoat.worldToLocal(playerAvatar.position.clone());if(l.z<-5.5&&l.z>-11.5&&Math.abs(l.x)<2.5){maritimeDriving=true;maritimeDrivingType="boat";maritimeHeading=0;setStatus("PASSENGER LAUNCH // AT THE HELM");}else if(Math.abs(maritimeBoat.position.z)>46&&havenShoreDockRoot){maritimeOnBoat=false;stationWalkRoot=havenShoreDockRoot;const dockQ=havenShoreDockRoot.getWorldQuaternion(new THREE.Quaternion());playerAvatar.position.copy(havenShoreDockRoot.localToWorld(new THREE.Vector3(0,1.12,46)));playerUp.set(0,1,0).applyQuaternion(dockQ).normalize();playerHeading.set(0,0,-1).applyQuaternion(dockQ).normalize();playerGrounded=true;playerInSpaceFlight=false;orientAvatar();setStatus("QUAI DE HAVEN // MAINLAND SHIPPING DOCK");}else{maritimeOnBoat=false;stationWalkRoot=havenPortRoot;playerAvatar.position.copy(havenPortRoot.localToWorld(new THREE.Vector3(0,3.15,17)));playerUp.set(0,1,0).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();playerHeading.set(0,0,-1).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();setStatus("L'ASTROLABE // MARINA DECK");}return;}
     if(playerAvatar.position.distanceTo(maritimeJetski.getWorldPosition(new THREE.Vector3()))<12){maritimeDriving=true;maritimeDrivingType="jetski";maritimeHeading=0;playerAvatar.visible=false;setStatus("PERSONAL WATERCRAFT // W A S D TO DRIVE");return;}
     if(playerAvatar.position.distanceTo(maritimeBoat.getWorldPosition(new THREE.Vector3()))<15){maritimeOnBoat=true;stationInteriorMode=true;stationWalkRoot=maritimeBoat;playerAvatar.position.copy(maritimeBoat.localToWorld(new THREE.Vector3(0,1.67,8.5)));playerUp.set(0,1,0).applyQuaternion(maritimeBoat.getWorldQuaternion(new THREE.Quaternion())).normalize();playerHeading.set(0,0,-1).applyQuaternion(maritimeBoat.getWorldQuaternion(new THREE.Quaternion())).normalize();playerGrounded=true;playerInSpaceFlight=false;playerAvatar.visible=true;orientAvatar();setStatus("PASSENGER LAUNCH // EIGHT SEATS // WALK TO THE HELM");}
   }
@@ -4485,16 +4490,20 @@
     // simple flat local-space walking frame so surface sampling cannot snap
     // the player through the deck and down to Haven.
     if(stationInteriorMode&&stationWalkRoot&&!playerInSpaceFlight){
-      const stationUp=new THREE.Vector3(0,1,0).applyQuaternion(stationWalkRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();
+      const stationQ=stationWalkRoot.getWorldQuaternion(new THREE.Quaternion());
+      const dockWalk=stationWalkRoot===havenShoreDockRoot,dockRadius=CONFIG.planetRadius+2.1;
+      const beforeLocal=stationWalkRoot.worldToLocal(playerAvatar.position.clone());
+      const stationUp=(dockWalk?new THREE.Vector3(0,Math.sqrt(Math.max(0,dockRadius*dockRadius-beforeLocal.z*beforeLocal.z))/dockRadius,beforeLocal.z/dockRadius):new THREE.Vector3(0,1,0)).applyQuaternion(stationQ).normalize();
       if(turn)playerHeading.applyAxisAngle(stationUp,turn*1.9*delta).normalize();
       if(walk){
         const from=playerAvatar.position.clone();
         const desired=from.clone().addScaledVector(playerHeading,walk*WORLD_SCALE.walkSpeed*delta);
-        playerAvatar.position.copy(resolveSolidMovement(from,desired,new THREE.Vector3(0,1,0)));
+        playerAvatar.position.copy(resolveSolidMovement(from,desired,stationUp));
       }
       const local=stationWalkRoot.worldToLocal(playerAvatar.position.clone()),bounds=stationWalkRoot.userData.walkBounds||{minX:-38,maxX:154,minZ:-47,maxZ:47,floorY:5.9};local.x=THREE.MathUtils.clamp(local.x,bounds.minX,bounds.maxX);local.z=THREE.MathUtils.clamp(local.z,bounds.minZ,bounds.maxZ);
       if(stationWalkRoot===solarHabitatStation){const dx=local.x-104,dz=local.z-104,r=Math.hypot(dx,dz),zone=Math.abs(dx)<35&&local.z>66&&local.z<143,door=Math.abs(dx)<3.75&&local.z>67&&local.z<78;if(zone&&r>29.15&&!door){const k=29.15/r;local.x=104+dx*k;local.z=104+dz*k;}}
-      local.y=bounds.floorY;playerAvatar.position.copy(stationWalkRoot.localToWorld(local));playerUp.set(0,1,0).applyQuaternion(stationWalkRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();
+      if(dockWalk){const z=THREE.MathUtils.clamp(local.z,-dockRadius+1,dockRadius-1),radialY=Math.sqrt(Math.max(0,dockRadius*dockRadius-z*z));local.z=z;local.y=bounds.floorY+radialY-dockRadius;playerUp.set(0,radialY/dockRadius,z/dockRadius).applyQuaternion(stationQ).normalize();}else{local.y=bounds.floorY;playerUp.set(0,1,0).applyQuaternion(stationQ).normalize();}
+      playerAvatar.position.copy(stationWalkRoot.localToWorld(local));playerHeading.addScaledVector(playerUp,-playerHeading.dot(playerUp)).normalize();
       orientAvatar();avatarIsWalking=!!walk;updateSolarCommonsInteraction();
       playerCameraTarget.copy(playerAvatar.position).addScaledVector(playerUp,1.0);
       camera.up.copy(playerUp);
@@ -4503,9 +4512,9 @@
       if(cameraMode==="first"){
         const head=playerAvatar.position.clone().addScaledVector(playerUp,1.84);
         camera.position.lerp(head,1-Math.pow(.00008,delta));
-        camera.lookAt(head.clone().add(playerHeading.clone().applyAxisAngle(new THREE.Vector3(0,1,0),cameraYaw).multiplyScalar(12)));
+        camera.lookAt(head.clone().add(playerHeading.clone().applyAxisAngle(stationUp,cameraYaw).multiplyScalar(12)));
       }else{
-        const back=playerHeading.clone().negate().applyAxisAngle(new THREE.Vector3(0,1,0),cameraYaw);
+        const back=playerHeading.clone().negate().applyAxisAngle(stationUp,cameraYaw);
         const desired=playerCameraTarget.clone().addScaledVector(back,8.6*Math.cos(cameraPitch)).addScaledVector(playerUp,8.6*Math.sin(cameraPitch));
         camera.position.lerp(desired,1-Math.pow(.00008,delta));camera.lookAt(playerCameraTarget);
       }
