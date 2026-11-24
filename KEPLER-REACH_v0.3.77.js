@@ -184,8 +184,9 @@
     if(scene)scene.traverse(node=>{
       const p=node.userData&&node.userData.krPhysicsProfile;
       if(p)registerPhysicalBody(node,{...p,id:p.id||node.name||("entity-"+node.uuid)});
-      else if(node.userData&&node.userData.species&&node.isGroup)registerPhysicalBody(node,{id:node.name||("creature-"+node.uuid),kind:"animal",massKg:35,densityKgM3:980,material:"living"});
-      else if(node.userData&&node.userData.krNpc)registerPhysicalBody(node,{id:node.name||("npc-"+node.uuid),kind:"npc",massKg:78,densityKgM3:985,material:"living"});
+      else if(node.isGroup&&(node.userData.characterName||node.userData.krNpc||node.name.startsWith("KR_NPC_")||node.name.startsWith("KR_SOLAR_COMMONS_NPC_")||node.name.startsWith("KR_DINER_PATRON_")))registerPhysicalBody(node,{id:node.name||("npc-"+node.uuid),kind:"npc",massKg:78,densityKgM3:985,material:"living"});
+      else if(node.name==="KR_HAVEN_UTILITY_ROVER")registerPhysicalBody(node,{id:"haven-rover",kind:"vehicle",massKg:3500,densityKgM3:1100,material:"aluminium-steel"});
+      else if(node.name==="KR_WINGED_SPACE_SEMI")registerPhysicalBody(node,{id:"winged-space-semi",kind:"vehicle",massKg:26000,densityKgM3:1200,material:"steel-composite"});
     });
   }
   function createHavenOrbitalSystem(){
@@ -217,6 +218,10 @@
     if(solarHabitatRing)solarHabitatRing.rotation.y+=delta*.56;
     if(stationRing)stationRing.rotation.z+=delta*.11;
     if(asteroidBelt)asteroidBelt.rotation.y+=delta*.0018;
+    if(havenSunLight&&centralStar&&planetWorld){
+      havenSunLight.position.copy(centralStar.position);
+      havenSunLight.target.position.copy(planetWorld.getWorldPosition(new THREE.Vector3()));
+    }
     if(carryRoot&&localPosition){
       carryRoot.updateWorldMatrix(true,false);playerAvatar.position.copy(carryRoot.localToWorld(localPosition));
       const q=carryRoot.getWorldQuaternion(new THREE.Quaternion()).multiply(oldQuaternion.invert());
@@ -386,7 +391,7 @@
   let solarHabitatRing = null;
   let havenOrbitRoot = null, lastStopOrbitRoot = null;
   let havenOrbitLine = null, lastStopOrbitLine = null;
-  let centralStar = null;
+  let centralStar = null, havenSunLight = null;
   let solarCommonsLandingMarker = null;
   let playerGrounded = true;
   let playerVerticalSpeed = 0;
@@ -2091,6 +2096,7 @@
 
     function createFauna(kind, x, z, colorIndex) {
       const group = new THREE.Group();
+      group.userData.krPhysicsProfile={kind:"animal",massKg:kind==="grazer"?72:(kind==="hopper"?18:4),densityKgM3:980,structuralStrength:.6,material:"living"};
       const bodyMat = faunaMaterials[colorIndex % faunaMaterials.length];
       const body = new THREE.Mesh(faunaBodyGeo, bodyMat);
       const head = new THREE.Mesh(faunaHeadGeo, bodyMat);
@@ -2213,6 +2219,7 @@
 
     // HAVEN UTILITY MOON BUGGY // six-wheel retro-futurist rover.
     const buggy = new THREE.Group();
+    buggy.name="KR_HAVEN_UTILITY_ROVER";
     const buggyBody = makeMaterial(0xe2b96f, { roughness:0.78, metalness:0.18 });
     const buggyTrim = makeMaterial(0x40565a, { roughness:0.72, metalness:0.28 });
     const buggyGlass = new THREE.MeshStandardMaterial({ color:0x80c9cf, emissive:0x17464c, emissiveIntensity:0.22, metalness:0.45, roughness:0.2, transparent:true, opacity:0.82 });
@@ -3284,7 +3291,7 @@
     const bark=new THREE.MeshStandardMaterial({color:0x80624c,roughness:1}),flower=new THREE.MeshStandardMaterial({color:0xe8a2bf,roughness:.75});
     const plants=[];
     function makeTree(x,z,scale,phase){
-      const tree=new THREE.Group();tree.position.set(x,.08,z);tree.scale.setScalar(scale);dome.add(tree);
+      const tree=new THREE.Group();tree.userData.krPhysicsProfile={kind:"plant",massKg:Math.max(12,scale*95),densityKgM3:650,structuralStrength:.8,material:"living-wood"};tree.position.set(x,.08,z);tree.scale.setScalar(scale);dome.add(tree);
       const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.28,.48,5.8,7),bark);trunk.position.y=2.9;tree.add(trunk);
       for(let j=0;j<7;j++){const a=j*Math.PI*2/7,leaf=new THREE.Mesh(new THREE.SphereGeometry(1,8,6),leafMats[j%leafMats.length]);leaf.scale.set(1.35,.42,.58);leaf.position.set(Math.cos(a)*1.15,4.2+Math.sin(j*2)*.28,Math.sin(a)*1.15);leaf.rotation.y=-a;tree.add(leaf);}
       const crown=new THREE.Mesh(new THREE.SphereGeometry(1.25,9,7),leafMats[(phase|0)%leafMats.length]);crown.scale.set(1.1,.75,1.1);crown.position.y=5.1;tree.add(crown);plants.push({group:tree,phase,kind:'tree'});
@@ -3292,7 +3299,7 @@
     for(const p of [[-17,-12,1.0,0],[17,-13,.9,1],[-18,14,.82,2],[18,15,1.05,3],[0,21,.72,1]])makeTree(...p);
     for(let i=0;i<26;i++){
       const a=i*2.399,r=8+(i%5)*3.5,x=Math.cos(a)*r,z=Math.sin(a)*r;
-      const plant=new THREE.Group();plant.position.set(x,.08,z);dome.add(plant);
+      const plant=new THREE.Group();plant.userData.krPhysicsProfile={kind:"plant",massKg:2.5,densityKgM3:650,structuralStrength:.25,material:"living-fibre"};plant.position.set(x,.08,z);dome.add(plant);
       const stem=new THREE.Mesh(new THREE.CylinderGeometry(.07,.13,1.25,6),leafMats[i%leafMats.length]);stem.position.y=.62;plant.add(stem);
       for(let j=0;j<5;j++){const leaf=new THREE.Mesh(new THREE.SphereGeometry(.55,7,5),leafMats[(i+j)%leafMats.length]);leaf.scale.set(1.25,.22,.42);leaf.position.set(Math.cos(j*1.256)*.55,.55+j*.08,Math.sin(j*1.256)*.55);leaf.rotation.y=j*1.256;plant.add(leaf);}
       if(i%3===0){const bloom=new THREE.Mesh(new THREE.SphereGeometry(.28,8,6),flower);bloom.position.y=1.3;plant.add(bloom);}
@@ -3304,7 +3311,7 @@
     const animals=[];
     const animalMats=[new THREE.MeshStandardMaterial({color:0xd58b56,roughness:.82}),new THREE.MeshStandardMaterial({color:0x8f9fce,roughness:.82}),new THREE.MeshStandardMaterial({color:0xb7c56d,roughness:.82})];
     function makeAnimal(kind,x,z,phase){
-      const animal=new THREE.Group();animal.name='KR_SOLAR_BIOSPHERE_'+kind.toUpperCase();animal.position.set(x,.1,z);dome.add(animal);
+      const animal=new THREE.Group();animal.name='KR_SOLAR_BIOSPHERE_'+kind.toUpperCase();animal.userData.krPhysicsProfile={kind:"animal",massKg:kind==="grazer"?72:(kind==="hopper"?18:12),densityKgM3:980,structuralStrength:.55,material:"living"};animal.position.set(x,.1,z);dome.add(animal);
       const body=new THREE.Mesh(new THREE.SphereGeometry(1,10,8),animalMats[animals.length%animalMats.length]);body.scale.set(kind==='grazer'?1.25:.85,.68,kind==='grazer'?.82:.72);body.position.y=1.05;animal.add(body);
       const head=new THREE.Mesh(new THREE.SphereGeometry(.48,9,7),animalMats[(animals.length+1)%animalMats.length]);head.position.set(0,1.28,-.78);animal.add(head);
       const eyeMat=new THREE.MeshBasicMaterial({color:0x17232a});for(const side of [-1,1]){const eye=new THREE.Mesh(new THREE.SphereGeometry(.075,6,5),eyeMat);eye.position.set(side*.29,1.38,-1.12);animal.add(eye);}
@@ -3318,7 +3325,7 @@
     // Three resident NPCs give the biosphere a lived-in research-outpost feel.
     const npcs=[];
     function makeNPC(name,x,z,coat,role,phase){
-      const npc=new THREE.Group();npc.name='KR_SOLAR_COMMONS_NPC_'+name.toUpperCase();npc.position.set(x,0,z);dome.add(npc);
+      const npc=new THREE.Group();npc.name='KR_SOLAR_COMMONS_NPC_'+name.toUpperCase();npc.userData.krNpc=true;npc.position.set(x,0,z);dome.add(npc);
       const skin=new THREE.MeshStandardMaterial({color:0x9aaf91,roughness:.85}),clothes=new THREE.MeshStandardMaterial({color:coat,roughness:.72}),boots=new THREE.MeshStandardMaterial({color:0x343b45,roughness:.8});
       const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.42,.85,4,8),clothes);torso.position.y=1.25;npc.add(torso);
       const head=new THREE.Mesh(new THREE.SphereGeometry(.38,10,8),skin);head.position.y=2.05;npc.add(head);
@@ -3414,7 +3421,7 @@
     diner.userData.hangarPosition=new THREE.Vector3(82,7.3,0);
     function part(g,geo,m,x,y,z){const o=new THREE.Mesh(geo,m);o.position.set(x,y,z);g.add(o);return o;}
     // Beef, the grease-loving alien bear cook.
-    const beef=new THREE.Group();beef.name="KR_NPC_BEEF";beef.position.set(-5,5.92,-16);diner.add(beef);
+    const beef=new THREE.Group();beef.name="KR_NPC_BEEF";beef.userData.krNpc=true;beef.position.set(-5,5.92,-16);diner.add(beef);
     const fur=mat(0x79513b,.05,.95),fur2=mat(0xa97854,.05,.92),black=mat(0x24252a),apron=mat(0x303b3b),eye=mat(0xf2d8a0);
     part(beef,new THREE.CapsuleGeometry(.78,1,4,8),fur,0,1.15,0);part(beef,new THREE.SphereGeometry(.86,12,9),fur,0,2.45,-.08);
     for(const side of [-1,1]){part(beef,new THREE.SphereGeometry(.34,8,6),fur,side*.68,3,-.04);part(beef,new THREE.SphereGeometry(.18,8,6),fur2,side*.68,3,-.12);part(beef,new THREE.SphereGeometry(.11,8,6),eye,side*.32,2.55,-.78);part(beef,new THREE.SphereGeometry(.055,8,6),black,side*.32,2.55,-.88);const arm=part(beef,new THREE.CapsuleGeometry(.22,.7,3,7),fur,side*.9,1.75,-.12);arm.rotation.z=side*-.24;}
@@ -3422,7 +3429,7 @@
     const pan=part(beef,new THREE.CylinderGeometry(.42,.42,.12,12),dark,1.25,1.55,-.3);pan.rotation.x=Math.PI/2;const handle=part(beef,new THREE.CylinderGeometry(.06,.06,.8,8),cream,1.65,1.55,-.3);handle.rotation.z=Math.PI/2;
     beef.rotation.y=Math.PI;beef.userData.characterName="Beef";beef.userData.role="Alien bear cook and bartender";beef.userData.personality="Loves grease";
     // Clovs, ebony 1960s-mod diner regular.
-    const clovs=new THREE.Group();clovs.name="KR_NPC_CLOVS";clovs.position.set(18,5.75,11.2);diner.add(clovs);
+    const clovs=new THREE.Group();clovs.name="KR_NPC_CLOVS";clovs.userData.krNpc=true;clovs.position.set(18,5.75,11.2);diner.add(clovs);
     const skin=mat(0x633a2c,.05,.82),skinLight=mat(0x8b5842,.05,.8),hair=mat(0x171a25,.05,.52),dress=mat(0x35a7a1,.18,.48),white=mat(0xf1dfc5);
     part(clovs,new THREE.CapsuleGeometry(.42,.78,4,8),dress,0,1.05,0);part(clovs,new THREE.SphereGeometry(.37,12,9),skin,0,2.05,-.02);part(clovs,new THREE.SphereGeometry(.46,12,8),hair,0,2.35,.02);part(clovs,new THREE.SphereGeometry(.29,10,7),hair,0,2.62,.13);
     const clovsArms=[];
@@ -3453,7 +3460,7 @@
     function alien(name,skin,clothes,x,z,scale=1){const g=new THREE.Group();g.name=name;g.position.set(x,5.58,z);g.scale.setScalar(scale);root.add(g);mesh(g,new THREE.CapsuleGeometry(.42,.72,4,8),clothes,0,1.02,0);sphere(g,.43,skin,0,2.05,-.02);sphere(g,.12,skin,-.49,2.1,-.03);sphere(g,.12,skin,.49,2.1,-.03);for(const side of [-1,1]){sphere(g,.065,white,side*.16,2.12,-.39,8);sphere(g,.032,black,side*.16,2.12,-.45,8);const arm=mesh(g,new THREE.CapsuleGeometry(.105,.56,3,7),skin,side*.48,1.45,-.02);arm.rotation.z=side*-.28;mesh(g,new THREE.CapsuleGeometry(.12,.52,3,7),skin,side*.17,.25,0);}g.userData.characterName=name;return g;}
     // Seated alien patrons inside the diner booths.
     const patrons=[],skins=[mat(0x91b5a0),mat(0x9b8ac3),mat(0xc3a16c),mat(0x7eabbc),mat(0xb2a1a0),mat(0x91a45d)],outfits=[mat(0x385f78),mat(0x8a4f48),mat(0x5d7862),mat(0x8a6b9b),mat(0xc17b42),mat(0x43515a)],spots=[[-29,-2],[-19,-2],[-29,7],[-19,7],[-29,17],[-19,17]];
-    for(let i=0;i<spots.length;i++){const [x,z]=spots[i],g=new THREE.Group();g.name="KR_DINER_PATRON_"+(i+1);g.position.set(x,5.7,z);diner.add(g);mesh(g,new THREE.CapsuleGeometry(.34,.58,3,7),outfits[i],0,.92,0);sphere(g,.35,skins[i],0,1.8,-.03);for(const side of [-1,1]){sphere(g,.055,white,side*.13,1.84,-.33,8);sphere(g,.026,black,side*.13,1.84,-.375,8);const arm=mesh(g,new THREE.CapsuleGeometry(.09,.45,3,6),skins[i],side*.38,1.22,-.08);arm.rotation.z=side*-.62;mesh(g,new THREE.CapsuleGeometry(.11,.5,3,6),outfits[i],side*.14,.25,.12);}box(g,2.4,.16,1.6,cream,0,1.22,-1.35);cyl(g,.12,.12,.25,orange,.65,1.42,-1.35,8);g.userData.phase=i*.83;patrons.push(g);}
+    for(let i=0;i<spots.length;i++){const [x,z]=spots[i],g=new THREE.Group();g.name="KR_DINER_PATRON_"+(i+1);g.userData.krNpc=true;g.position.set(x,5.7,z);diner.add(g);mesh(g,new THREE.CapsuleGeometry(.34,.58,3,7),outfits[i],0,.92,0);sphere(g,.35,skins[i],0,1.8,-.03);for(const side of [-1,1]){sphere(g,.055,white,side*.13,1.84,-.33,8);sphere(g,.026,black,side*.13,1.84,-.375,8);const arm=mesh(g,new THREE.CapsuleGeometry(.09,.45,3,6),skins[i],side*.38,1.22,-.08);arm.rotation.z=side*-.62;mesh(g,new THREE.CapsuleGeometry(.11,.5,3,6),outfits[i],side*.14,.25,.12);}box(g,2.4,.16,1.6,cream,0,1.22,-1.35);cyl(g,.12,.12,.25,orange,.65,1.42,-1.35,8);g.userData.phase=i*.83;patrons.push(g);}
     // Barred jail for Mia.
     const jail=new THREE.Group();jail.name="KR_LAST_STOP_JAIL";jail.position.set(58,5.58,-25);root.add(jail);
     box(jail,12,.45,10,dark,0,.22,0);box(jail,12,.35,10,teal,0,6.5,0);box(jail,12,5.8,.35,teal,0,3.35,-4.85);box(jail,.35,5.8,9,teal,-5.85,3.35,0);box(jail,.35,5.8,9,teal,5.85,3.35,0);
@@ -3694,6 +3701,11 @@
     light.position.copy(sun.position);
 
     scene.add(light);
+    havenSunLight=new THREE.DirectionalLight(0xffe4bd,2.15);
+    havenSunLight.position.copy(sun.position);
+    havenSunLight.target.position.copy(planetCenter);
+    scene.add(havenSunLight);
+    scene.add(havenSunLight.target);
 
     // Sun glow
 
@@ -5093,7 +5105,7 @@
       scene.add(
         new THREE.AmbientLight(
           0xc2b8d8,
-          1.55
+          0.62
         )
       );
 
