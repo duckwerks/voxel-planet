@@ -2915,13 +2915,14 @@
     camera.up.copy(wu);const eye=wp.clone().addScaledVector(wu,maritimeDrivingType==="jetski"?2.5:7).addScaledVector(wf,-(maritimeDrivingType==="jetski"?6:15));camera.position.lerp(eye,1-Math.pow(.00008,dt));camera.lookAt(wp.clone().addScaledVector(wu,2));
   }
   function updateMaritimePrompt(){
-    if(!maritimeInteractButton)return;let label="",active=false;if(!onFoot||!playerAvatar){maritimeInteractButton.dataset.active="0";maritimeInteractButton.style.display="none";return;}
+    if(!maritimeInteractButton)return;let label="",active=false;if(!onFoot||!playerInSpaceFlight||!playerAvatar){maritimeInteractButton.dataset.active="0";maritimeInteractButton.style.display="none";return;}
     if(maritimeDriving){label=maritimeDrivingType==="jetski"?"EXIT PERSONAL WATERCRAFT":"RELEASE THE HELM";active=true;}
     else if(maritimeOnBoat){const l=maritimeBoat.worldToLocal(playerAvatar.position.clone());label=(l.z<-5.5&&l.z>-11.5&&Math.abs(l.x)<2.5)?"TAKE THE HELM":"RETURN TO MARINA";active=true;}
     else if(havenPortRoot&&maritimeBoat&&maritimeJetski){const p=playerAvatar.position,bd=p.distanceTo(maritimeBoat.getWorldPosition(new THREE.Vector3())),sd=p.distanceTo(maritimeJetski.getWorldPosition(new THREE.Vector3()));if(sd<12){label="RIDE PERSONAL WATERCRAFT";active=true;}else if(bd<15){label="BOARD PASSENGER LAUNCH";active=true;}}
     maritimeInteractButton.textContent=label||"MARITIME";maritimeInteractButton.dataset.active=active?"1":"0";maritimeInteractButton.style.display=active?"block":"none";
   }
   function handleMaritimeAction(){
+    if(!onFoot||!playerAvatar||playerInSpaceFlight)return;
     if(maritimeDriving){maritimeDriving=false;clearKeys();if(maritimeDrivingType==="jetski"){playerAvatar.visible=true;stationInteriorMode=true;stationWalkRoot=havenPortRoot;playerAvatar.position.copy(havenPortRoot.localToWorld(new THREE.Vector3(0,3.15,17)));playerUp.set(0,1,0).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();playerHeading.set(0,0,-1).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();}setStatus("MARITIME VEHICLE // SECURED");return;}
     if(maritimeOnBoat){const l=maritimeBoat.worldToLocal(playerAvatar.position.clone());if(l.z<-5.5&&l.z>-11.5&&Math.abs(l.x)<2.5){maritimeDriving=true;maritimeDrivingType="boat";maritimeHeading=0;setStatus("PASSENGER LAUNCH // AT THE HELM");}else{maritimeOnBoat=false;stationWalkRoot=havenPortRoot;playerAvatar.position.copy(havenPortRoot.localToWorld(new THREE.Vector3(0,3.15,17)));playerUp.set(0,1,0).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();playerHeading.set(0,0,-1).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();setStatus("L'ASTROLABE // MARINA DECK");}return;}
     if(playerAvatar.position.distanceTo(maritimeJetski.getWorldPosition(new THREE.Vector3()))<12){maritimeDriving=true;maritimeDrivingType="jetski";maritimeHeading=0;playerAvatar.visible=false;setStatus("PERSONAL WATERCRAFT // W A S D TO DRIVE");return;}
@@ -4442,7 +4443,7 @@
     if (navReadout.children[2]) navReadout.children[2].style.display = "none";
     if (navReadout.children[3]) navReadout.children[3].style.display = "none";
     if (buggyMode) return;
-    if(buggyInteractButton&&havenBuggy){const d=playerAvatar.position.distanceTo(havenBuggy.getWorldPosition(new THREE.Vector3()));buggyInteractButton.dataset.active=d<=13?"1":"0";buggyInteractButton.style.display=d<=13?"block":"none";}
+    if(buggyInteractButton&&havenBuggy){const d=playerAvatar.position.distanceTo(havenBuggy.getWorldPosition(new THREE.Vector3())),near=d<=13&&!playerInSpaceFlight;buggyInteractButton.dataset.active=near?"1":"0";buggyInteractButton.style.display=near?"block":"none";}
     updateMaritimePrompt();
     if(maritimeDriving){updateMaritimeVehicle(delta);return;}
     if(keys.space&&!playerInSpaceFlight&&playerGrounded){
