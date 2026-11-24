@@ -362,11 +362,18 @@
     walkableSurfaces.length=0;
     solidCache=new WeakMap();
     if(!scene)return;
+    const colliderParts = new Set();
     scene.traverse(node=>{
       if(!node.userData)return;
-      if(node.userData.krSolidCollider||node.userData.krSolidRoot)solidColliders.push(node);
+      if(node.userData.krSolidCollider)colliderParts.add(node);
+      if(node.userData.krSolidRoot){
+        node.traverse(part=>{
+          if(part.isMesh&&part.geometry)colliderParts.add(part);
+        });
+      }
       if(node.userData.krWalkableSurface)walkableSurfaces.push(node);
     });
+    solidColliders.push(...colliderParts);
   }
   function solidScratch(){
     if(!solidScratchData)solidScratchData={a:new THREE.Vector3(),b:new THREE.Vector3(),m:new THREE.Vector3(),start:new THREE.Vector3(),end:new THREE.Vector3(),range:[0,1],corner:new THREE.Vector3(),mat:new THREE.Matrix4(),inv:new THREE.Matrix4()};
