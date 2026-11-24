@@ -12,7 +12,6 @@
   // FEATURES
   // - Procedural starfield
   // - Procedural low-poly planet
-  // - Maritime interaction prompt visibility and guarded boarding actions
   // - Dynamic vehicle occupants and cargo slots
   // - Empty rover until a player boards
   // - Procedural spacecraft
@@ -41,6 +40,13 @@
   // - In-game local GLB workshop with preview, scale/orientation controls and ship replacement
   // - Model scale/pivot normalization and named attachment sockets
   // - Procedural fallbacks retained for all current vehicles and characters
+  // - v0.3.82: shared camera collision (terrain march + cached blocker list) for every view
+  // - v0.3.82: ship-versus-planet/moon terrain collision (no more flying through Haven)
+  // - v0.3.82: ship chase camera keeps its heading when the nose points up or down
+  // - v0.3.82: rigid first-person cameras (no lag/slide), carried-frame update ordering
+  // - v0.3.82: unified control intent layer: humans, scripts and LLM agents drive the same controls
+  // - v0.3.82: KeplerReach.state()/input/actions/agent/characters/registerControllable API
+  // - v0.3.82: character roster and claims (e.g. Benis the sheriff: human, LLM or script)
   //
   // NO SERVER REQUIRED
   // NO COMMANDS YET
@@ -52,7 +58,7 @@
   }
 
   const CONFIG = {
-    version: "0.3.79",
+    version: "0.3.82",
     seed: 847291,
     threeVersion: "0.160.0",
 
@@ -586,7 +592,7 @@
       letter-spacing:3px;
     ">KEPLER REACH</div>
 
-    <div>PROCEDURAL UNIVERSE // BUILD 0.3.75</div>
+    <div>PROCEDURAL UNIVERSE // BUILD 0.3.82</div>
 
     <div id="kr-location">LOCATION: INITIALIZING</div>
     <div id="kr-speed">VELOCITY: 0</div>
@@ -1078,12 +1084,15 @@
       actionButtons.style.display="flex";
       // Keep the useful on-foot actions; hide the workshop and unrelated
       // interaction buttons until the player is back aboard.
+      const contextualButtons=[habitatGateButton,ranchInteractButton,moonRxButton,sanchosButton,whizzDanceButton];
       for(const button of actionButtons.children){
+        if(contextualButtons.includes(button)){if(playerInSpaceFlight||stationInteriorMode)button.style.display="none";continue;}
         button.style.display=(button===boardShipButton||button===homeButton||(button===buggyInteractButton&&buggyInteractButton.dataset.active==="1")||(button===maritimeInteractButton&&maritimeInteractButton.dataset.active==="1"))?"block":"none";
       }
       modeHint.style.display="none";
     }else{
       actionButtons.style.display="flex";
+      for(const b of [habitatGateButton,ranchInteractButton,moonRxButton,sanchosButton,whizzDanceButton])if(b)b.style.display="none";
       // Navigation coordinates are a first-person instrument, not a
       // permanent overlay on the chase-camera view.
       navReadout.style.display = cameraMode === "first" ? "flex" : "none";
@@ -1173,6 +1182,10 @@
     document.removeEventListener("keydown", keyDown);
     document.removeEventListener("keyup", keyUp);
     window.removeEventListener("blur", clearKeys);
+    window.removeEventListener("blur", releaseMoveStick);
+    document.removeEventListener("pointerup", boostEnd);
+    document.removeEventListener("pointercancel", boostEnd);
+    window.removeEventListener("blur", boostEnd);
   });
 
   // ============================================================
@@ -1527,8 +1540,8 @@
     const portDistance=Math.acos(THREE.MathUtils.clamp(x*portX+y*portY+z*portZ,-1,1))*CONFIG.planetRadius;
     const portBasin=1-THREE.MathUtils.smoothstep(portDistance,72,104);
     if(portBasin>0.001){land=false;elevation=THREE.MathUtils.lerp(elevation,-5.4,portBasin);}
-    const shoreTangent=new THREE.Vector3(0,0,-1).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(portX,portY,portZ).normalize())).normalize();
-    const shoreX=portX*Math.cos(92/CONFIG.planetRadius)+shoreTangent.x*Math.sin(92/CONFIG.planetRadius),shoreY=portY*Math.cos(92/CONFIG.planetRadius)+shoreTangent.y*Math.sin(92/CONFIG.planetRadius),shoreZ=portZ*Math.cos(92/CONFIG.planetRadius)+shoreTangent.z*Math.sin(92/CONFIG.planetRadius);
+    const hc=terrainProfile._c||(terrainProfile._c=(()=>{const tan=new THREE.Vector3(0,0,-1).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(portX,portY,portZ).normalize())).normalize(),a=92/CONFIG.planetRadius;return {sx:portX*Math.cos(a)+tan.x*Math.sin(a),sy:portY*Math.cos(a)+tan.y*Math.sin(a),sz:portZ*Math.cos(a)+tan.z*Math.sin(a)};})());
+    const shoreX=hc.sx,shoreY=hc.sy,shoreZ=hc.sz;
     const shoreDistance=Math.acos(THREE.MathUtils.clamp(x*shoreX+y*shoreY+z*shoreZ,-1,1))*CONFIG.planetRadius;
     const shoreIsland=1-THREE.MathUtils.smoothstep(shoreDistance,17,31);
     if(shoreIsland>0.001){land=true;elevation=THREE.MathUtils.lerp(elevation,2.1,shoreIsland);}
@@ -2683,12 +2696,12 @@
       dock.userData.patrons.forEach(p=>{p.rotation.y=Math.sin(phase*.35+p.userData.phase)*.09;});
       // Mia walks a compact loop inside her cell, clear of the bed and plumbing.
       const mia=dock.userData.mia,walk=phase*.42;
-      mia.position.set(Math.sin(walk)*1.35,.35,1.25+Math.cos(walk)*1.45);
-      mia.rotation.y=Math.atan2(Math.cos(walk)*1.35,-Math.sin(walk)*1.45);
+      if(!characterAIHeld("mia")){mia.position.set(Math.sin(walk)*1.35,.35,1.25+Math.cos(walk)*1.45);
+      mia.rotation.y=Math.atan2(Math.cos(walk)*1.35,-Math.sin(walk)*1.45);}
       // Benis patrols a rounded rectangular circuit around the outside of the jail.
       const patrol=phase*.24;
-      dock.userData.benis.position.set(58+9.4*Math.cos(patrol),5.58,-25+8.2*Math.sin(patrol));
-      dock.userData.benis.rotation.y=Math.atan2(8.2*Math.cos(patrol),-9.4*Math.sin(patrol));
+      if(!characterAIHeld("benis")){dock.userData.benis.position.set(58+9.4*Math.cos(patrol),5.58,-25+8.2*Math.sin(patrol));
+      dock.userData.benis.rotation.y=Math.atan2(8.2*Math.cos(patrol),-9.4*Math.sin(patrol));}
       dock.userData.owner.rotation.y=Math.PI/2+Math.sin(phase*.3)*.1;
       dock.userData.woman.rotation.y=-Math.PI/2+Math.sin(phase*.27)*.12;
     }
@@ -2818,6 +2831,7 @@
       material
     );
 
+    planet.userData.krTerrainMesh = true;
     world.add(planet);
 
     // Atmospheric shell
@@ -2944,107 +2958,18 @@
     camera.up.copy(wu);const eye=wp.clone().addScaledVector(wu,maritimeDrivingType==="jetski"?2.5:7).addScaledVector(wf,-(maritimeDrivingType==="jetski"?6:15));camera.position.lerp(eye,1-Math.pow(.00008,dt));camera.lookAt(wp.clone().addScaledVector(wu,2));
   }
   function updateMaritimePrompt(){
-    if(!maritimeInteractButton)return;
-    let label="",active=false;
-    // The interaction prompt is available while walking, not while using
-    // the Kinetic Field. The previous condition was inverted and hid it
-    // during normal on-foot play.
-    if(!onFoot||playerInSpaceFlight||!playerAvatar){
-      maritimeInteractButton.dataset.active="0";
-      maritimeInteractButton.style.display="none";
-      return;
-    }
-    if(maritimeDriving){
-      label=maritimeDrivingType==="jetski"?"EXIT PERSONAL WATERCRAFT":"RELEASE THE HELM";
-      active=true;
-    }else if(maritimeOnBoat&&maritimeBoat){
-      const l=maritimeBoat.worldToLocal(playerAvatar.position.clone());
-      label=(l.z<-5.5&&l.z>-11.5&&Math.abs(l.x)<2.5)
-        ?"TAKE THE HELM"
-        :(Math.abs(maritimeBoat.position.z)>46
-          ?"DISEMBARK AT QUAI DE HAVEN"
-          :"RETURN TO L'ASTROLABE");
-      active=true;
-    }else if(havenPortRoot&&maritimeBoat&&maritimeJetski){
-      const p=playerAvatar.position;
-      const bd=p.distanceTo(maritimeBoat.getWorldPosition(new THREE.Vector3()));
-      const sd=p.distanceTo(maritimeJetski.getWorldPosition(new THREE.Vector3()));
-      if(sd<12){label="RIDE PERSONAL WATERCRAFT";active=true;}
-      else if(bd<15){label="BOARD PASSENGER LAUNCH";active=true;}
-    }
-    maritimeInteractButton.textContent=label||"MARITIME";
-    maritimeInteractButton.dataset.active=active?"1":"0";
-    maritimeInteractButton.style.display=active?"block":"none";
+    if(!maritimeInteractButton)return;let label="",active=false;if(!onFoot||playerInSpaceFlight||!playerAvatar){maritimeInteractButton.dataset.active="0";maritimeInteractButton.style.display="none";return;}
+    if(maritimeDriving){label=maritimeDrivingType==="jetski"?"EXIT PERSONAL WATERCRAFT":"RELEASE THE HELM";active=true;}
+    else if(maritimeOnBoat){const l=maritimeBoat.worldToLocal(playerAvatar.position.clone());label=(l.z<-5.5&&l.z>-11.5&&Math.abs(l.x)<2.5)?"TAKE THE HELM":(Math.abs(maritimeBoat.position.z)>46?"DISEMBARK AT QUAI DE HAVEN":"RETURN TO L'ASTROLABE");active=true;}
+    else if(havenPortRoot&&maritimeBoat&&maritimeJetski){const p=playerAvatar.position,bd=p.distanceTo(maritimeBoat.getWorldPosition(new THREE.Vector3())),sd=p.distanceTo(maritimeJetski.getWorldPosition(new THREE.Vector3()));if(sd<12){label="RIDE PERSONAL WATERCRAFT";active=true;}else if(bd<15){label="BOARD PASSENGER LAUNCH";active=true;}}
+    maritimeInteractButton.textContent=label||"MARITIME";maritimeInteractButton.dataset.active=active?"1":"0";maritimeInteractButton.style.display=active?"block":"none";
   }
   function handleMaritimeAction(){
     if(!onFoot||!playerAvatar||playerInSpaceFlight)return;
-    if(maritimeDriving){
-      maritimeDriving=false;
-      clearKeys();
-      if(maritimeDrivingType==="jetski"&&havenPortRoot){
-        playerAvatar.visible=true;
-        stationInteriorMode=true;
-        stationWalkRoot=havenPortRoot;
-        playerAvatar.position.copy(havenPortRoot.localToWorld(new THREE.Vector3(0,3.15,17)));
-        const portQ=havenPortRoot.getWorldQuaternion(new THREE.Quaternion());
-        playerUp.set(0,1,0).applyQuaternion(portQ).normalize();
-        playerHeading.set(0,0,-1).applyQuaternion(portQ).normalize();
-      }
-      setStatus("MARITIME VEHICLE // SECURED");
-      return;
-    }
-    if(maritimeOnBoat&&maritimeBoat){
-      const l=maritimeBoat.worldToLocal(playerAvatar.position.clone());
-      if(l.z<-5.5&&l.z>-11.5&&Math.abs(l.x)<2.5){
-        maritimeDriving=true;
-        maritimeDrivingType="boat";
-        maritimeHeading=0;
-        setStatus("PASSENGER LAUNCH // AT THE HELM");
-      }else if(Math.abs(maritimeBoat.position.z)>46&&havenShoreDockRoot){
-        maritimeOnBoat=false;
-        stationWalkRoot=havenShoreDockRoot;
-        const dockQ=havenShoreDockRoot.getWorldQuaternion(new THREE.Quaternion());
-        playerAvatar.position.copy(havenShoreDockRoot.localToWorld(new THREE.Vector3(0,1.12,46)));
-        playerUp.set(0,1,0).applyQuaternion(dockQ).normalize();
-        playerHeading.set(0,0,-1).applyQuaternion(dockQ).normalize();
-        playerGrounded=true;
-        playerInSpaceFlight=false;
-        orientAvatar();
-        setStatus("QUAI DE HAVEN // MAINLAND SHIPPING DOCK");
-      }else if(havenPortRoot){
-        maritimeOnBoat=false;
-        stationWalkRoot=havenPortRoot;
-        const portQ=havenPortRoot.getWorldQuaternion(new THREE.Quaternion());
-        playerAvatar.position.copy(havenPortRoot.localToWorld(new THREE.Vector3(0,3.15,17)));
-        playerUp.set(0,1,0).applyQuaternion(portQ).normalize();
-        playerHeading.set(0,0,-1).applyQuaternion(portQ).normalize();
-        setStatus("L'ASTROLABE // MARINA DECK");
-      }
-      return;
-    }
-    if(!havenPortRoot||!maritimeJetski||!maritimeBoat)return;
-    if(playerAvatar.position.distanceTo(maritimeJetski.getWorldPosition(new THREE.Vector3()))<12){
-      maritimeDriving=true;
-      maritimeDrivingType="jetski";
-      maritimeHeading=0;
-      playerAvatar.visible=false;
-      setStatus("PERSONAL WATERCRAFT // W A S D TO DRIVE");
-      return;
-    }
-    if(playerAvatar.position.distanceTo(maritimeBoat.getWorldPosition(new THREE.Vector3()))<15){
-      maritimeOnBoat=true;
-      stationInteriorMode=true;
-      stationWalkRoot=maritimeBoat;
-      playerAvatar.position.copy(maritimeBoat.localToWorld(new THREE.Vector3(0,1.67,8.5)));
-      const boatQ=maritimeBoat.getWorldQuaternion(new THREE.Quaternion());
-      playerUp.set(0,1,0).applyQuaternion(boatQ).normalize();
-      playerHeading.set(0,0,-1).applyQuaternion(boatQ).normalize();
-      playerGrounded=true;
-      playerInSpaceFlight=false;
-      playerAvatar.visible=true;
-      orientAvatar();
-      setStatus("PASSENGER LAUNCH // EIGHT SEATS // WALK TO THE HELM");
-    }
+    if(maritimeDriving){maritimeDriving=false;clearKeys();if(maritimeDrivingType==="jetski"){playerAvatar.visible=true;stationInteriorMode=true;stationWalkRoot=havenPortRoot;playerAvatar.position.copy(havenPortRoot.localToWorld(new THREE.Vector3(0,3.15,17)));playerUp.set(0,1,0).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();playerHeading.set(0,0,-1).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();}setStatus("MARITIME VEHICLE // SECURED");return;}
+    if(maritimeOnBoat){const l=maritimeBoat.worldToLocal(playerAvatar.position.clone());if(l.z<-5.5&&l.z>-11.5&&Math.abs(l.x)<2.5){maritimeDriving=true;maritimeDrivingType="boat";maritimeHeading=0;setStatus("PASSENGER LAUNCH // AT THE HELM");}else if(Math.abs(maritimeBoat.position.z)>46&&havenShoreDockRoot){maritimeOnBoat=false;stationWalkRoot=havenShoreDockRoot;const dockQ=havenShoreDockRoot.getWorldQuaternion(new THREE.Quaternion());playerAvatar.position.copy(havenShoreDockRoot.localToWorld(new THREE.Vector3(0,1.12,46)));playerUp.set(0,1,0).applyQuaternion(dockQ).normalize();playerHeading.set(0,0,-1).applyQuaternion(dockQ).normalize();playerGrounded=true;playerInSpaceFlight=false;orientAvatar();setStatus("QUAI DE HAVEN // MAINLAND SHIPPING DOCK");}else{maritimeOnBoat=false;stationWalkRoot=havenPortRoot;playerAvatar.position.copy(havenPortRoot.localToWorld(new THREE.Vector3(0,3.15,17)));playerUp.set(0,1,0).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();playerHeading.set(0,0,-1).applyQuaternion(havenPortRoot.getWorldQuaternion(new THREE.Quaternion())).normalize();setStatus("L'ASTROLABE // MARINA DECK");}return;}
+    if(playerAvatar.position.distanceTo(maritimeJetski.getWorldPosition(new THREE.Vector3()))<12){maritimeDriving=true;maritimeDrivingType="jetski";maritimeHeading=0;playerAvatar.visible=false;setStatus("PERSONAL WATERCRAFT // W A S D TO DRIVE");return;}
+    if(playerAvatar.position.distanceTo(maritimeBoat.getWorldPosition(new THREE.Vector3()))<15){maritimeOnBoat=true;stationInteriorMode=true;stationWalkRoot=maritimeBoat;playerAvatar.position.copy(maritimeBoat.localToWorld(new THREE.Vector3(0,1.67,8.5)));playerUp.set(0,1,0).applyQuaternion(maritimeBoat.getWorldQuaternion(new THREE.Quaternion())).normalize();playerHeading.set(0,0,-1).applyQuaternion(maritimeBoat.getWorldQuaternion(new THREE.Quaternion())).normalize();playerGrounded=true;playerInSpaceFlight=false;playerAvatar.visible=true;orientAvatar();setStatus("PASSENGER LAUNCH // EIGHT SEATS // WALK TO THE HELM");}
   }
 
 
@@ -3849,7 +3774,7 @@
     geometry.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
-    moonWorld.add(new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,flatShading:true})));
+    {const moonTerrainMesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,flatShading:true}));moonTerrainMesh.userData.krTerrainMesh=true;moonWorld.add(moonTerrainMesh);}
 
     // Clear landing beacon; no buildings, rocks or vegetation on Luna.
     moonLandingMarker=new THREE.Group();
@@ -3936,6 +3861,7 @@
   let forward = null;
   let cameraOffset = null;
   let desiredCamera = null;
+  let shipChaseHeading = null;
   let lookTarget = null;
   let planetCenter = null;
 
@@ -4344,12 +4270,14 @@
       const eye=worldPos.clone().addScaledVector(worldUp,2.15).addScaledVector(worldForward,0.25);
       const viewForward=worldForward.clone().applyAxisAngle(worldUp,cameraYaw);
       viewForward.addScaledVector(worldUp,Math.tan(cameraPitch-0.32)*0.65).normalize();
-      camera.position.lerp(eye,1-Math.pow(0.00008,delta));
+      camera.position.copy(eye);
       camera.lookAt(eye.clone().addScaledVector(viewForward,12));
       if(cameraButton)cameraButton.textContent="VIEW: DRIVER POV";
     }else{
       const back=worldForward.clone().negate().applyAxisAngle(worldUp,cameraYaw);
       const desired=worldPos.clone().addScaledVector(back,8.5*Math.cos(cameraPitch)).addScaledVector(worldUp,8.5*Math.sin(cameraPitch));
+      const buggyTarget=worldPos.clone().addScaledVector(worldUp,1.4);
+      desired.copy(resolveCameraSafe(buggyTarget,desired,[havenBuggy,playerAvatar],{minDist:2.5}));
       camera.position.lerp(desired,1-Math.pow(0.00008,delta));
       camera.lookAt(worldPos.clone().addScaledVector(worldUp,1.4).addScaledVector(worldForward,2.2));
       if(cameraButton)cameraButton.textContent="VIEW: CHASE CAMERA";
@@ -4521,9 +4449,9 @@
     playerCameraTarget.copy(playerAvatar.position).addScaledVector(playerUp,1.25);camera.up.copy(playerUp);
     if(cameraMode==="first"){
       const head=playerAvatar.position.clone().addScaledVector(playerUp,1.84);
-      camera.position.lerp(head,1-Math.pow(.00008,dt));
+      camera.position.copy(head);
       const view=playerFlightForward.clone().applyAxisAngle(playerUp,flightCameraYaw);
-      camera.lookAt(head.clone().add(view,28));
+      camera.lookAt(head.clone().addScaledVector(view,28));
     }else{
       const cameraBase=playerFlightForward.clone(),verticalAlignment=cameraBase.dot(playerUp);
       if(Math.abs(verticalAlignment)>.96){
@@ -4536,17 +4464,7 @@
       viewForward.applyAxisAngle(viewRight,flightCameraPitch).normalize();
       const desired=playerAvatar.position.clone().addScaledVector(viewForward,-9.5).addScaledVector(playerUp,2.5);
       const cameraTarget=playerAvatar.position.clone().addScaledVector(playerUp,1.0);
-      if(cameraRaycaster){
-        const rayDirection=desired.clone().sub(cameraTarget),rayLength=rayDirection.length();
-        rayDirection.normalize();cameraRaycaster.near=.12;cameraRaycaster.far=rayLength+.5;
-        cameraRaycaster.set(cameraTarget,rayDirection);
-        const hits=cameraRaycaster.intersectObjects(scene.children,true);
-        for(const hit of hits){
-          let node=hit.object,ignore=false;
-          while(node){if(node===playerAvatar||node.userData.noCameraCollision){ignore=true;break;}node=node.parent;}
-          if(!ignore&&hit.distance>.25){desired.copy(cameraTarget).addScaledVector(rayDirection,Math.max(.72,Math.min(rayLength,hit.distance-WORLD_SCALE.cameraClearance)));break;}
-        }
-      }
+      desired.copy(resolveCameraSafe(cameraTarget,desired,[playerAvatar]));
       camera.position.lerp(desired,1-Math.pow(.00008,dt));
       camera.lookAt(playerAvatar.position.clone().addScaledVector(viewForward,5).addScaledVector(playerUp,1));
     }
@@ -4601,11 +4519,12 @@
       cameraPitch=THREE.MathUtils.clamp(cameraPitch-lookInputY*1.15*delta,-0.12,0.88);
       if(cameraMode==="first"){
         const head=playerAvatar.position.clone().addScaledVector(playerUp,1.84);
-        camera.position.lerp(head,1-Math.pow(.00008,delta));
+        camera.position.copy(head);
         camera.lookAt(head.clone().add(playerHeading.clone().applyAxisAngle(stationUp,cameraYaw).multiplyScalar(12)));
       }else{
         const back=playerHeading.clone().negate().applyAxisAngle(stationUp,cameraYaw);
         const desired=playerCameraTarget.clone().addScaledVector(back,8.6*Math.cos(cameraPitch)).addScaledVector(playerUp,8.6*Math.sin(cameraPitch));
+        desired.copy(resolveCameraSafe(playerCameraTarget,desired,[playerAvatar]));
         camera.position.lerp(desired,1-Math.pow(.00008,delta));camera.lookAt(playerCameraTarget);
       }
       return;
@@ -4683,29 +4602,12 @@
       const viewForward=playerHeading.clone().applyAxisAngle(playerUp,cameraYaw);
       viewForward.addScaledVector(playerUp,Math.tan(cameraPitch)*0.45).normalize();
       const head=playerAvatar.position.clone().addScaledVector(playerUp,1.84);
-      camera.position.lerp(head,1-Math.pow(0.00008,delta));
+      camera.position.copy(head);
       camera.lookAt(head.clone().addScaledVector(viewForward,12));
     }else{
       const back=playerHeading.clone().negate().applyAxisAngle(playerUp,cameraYaw);
       const desired=playerCameraTarget.clone().addScaledVector(back,8.6*Math.cos(cameraPitch)).addScaledVector(playerUp,8.6*Math.sin(cameraPitch));
-      const ray=desired.clone().sub(playerCameraTarget),desiredDistance=ray.length();ray.normalize();
-      if(cameraRaycaster){
-        cameraRaycaster.near=0.12;cameraRaycaster.far=desiredDistance+0.5;
-        cameraRaycaster.set(playerCameraTarget,ray);
-        const hits=cameraRaycaster.intersectObjects(scene.children,true);
-        for(const hit of hits){
-          let node=hit.object,ignoreHit=false;
-          while(node){
-            if(node===playerAvatar || node.userData.noCameraCollision){ignoreHit=true;break;}
-            node=node.parent;
-          }
-          if(!ignoreHit&&hit.distance>0.25){
-            const safeDistance=Math.max(0.72,Math.min(desiredDistance,hit.distance-WORLD_SCALE.cameraClearance));
-            desired.copy(playerCameraTarget).addScaledVector(ray,safeDistance);
-            break;
-          }
-        }
-      }
+      desired.copy(resolveCameraSafe(playerCameraTarget,desired,[playerAvatar]));
       // Smooth both inward collision corrections and outward recovery. The
       // previous instant-in/slow-out rule made the camera visibly snap and
       // wobble as rays crossed nearby building and prop geometry.
@@ -4764,17 +4666,28 @@
         .applyQuaternion(ship.getWorldQuaternion(new THREE.Quaternion())).normalize();
       const target = worldPosition.clone().addScaledVector(worldForward, 65);
       camera.up.copy(worldUp);
-      camera.position.lerp(worldPosition, 1 - Math.pow(0.00008, delta));
+      camera.position.copy(worldPosition);
       camera.lookAt(target);
       if (cameraButton) cameraButton.textContent = "VIEW: CHASE";
     } else {
-      const horizontalForward = worldForward.clone();
-      horizontalForward.y = 0;
-      if (horizontalForward.lengthSq() < 0.0001) horizontalForward.set(0, 0, -1);
-      horizontalForward.normalize();
-      const chaseOffset = horizontalForward.clone().multiplyScalar(-34);
+      // The chase heading is remembered, so the camera no longer snaps to a
+      // fixed fallback when the nose points (nearly) straight up or down.
+      if (!shipChaseHeading) shipChaseHeading = new THREE.Vector3(0, 0, -1);
+      const rawHeading = worldForward.clone();
+      rawHeading.y = 0;
+      const rawLenSq = rawHeading.lengthSq();
+      if (rawLenSq > 0.04) {
+        rawHeading.normalize();
+        if (rawLenSq > 0.5 || shipChaseHeading.dot(rawHeading) > -0.2) {
+          shipChaseHeading.lerp(rawHeading, 1 - Math.pow(0.004, delta));
+          if (shipChaseHeading.lengthSq() < 1e-6) shipChaseHeading.copy(rawHeading);
+          shipChaseHeading.normalize();
+        }
+      }
+      const chaseOffset = shipChaseHeading.clone().multiplyScalar(-34);
       chaseOffset.y = 12;
       desiredCamera.copy(ship.position).add(chaseOffset);
+      desiredCamera.copy(resolveCameraSafe(ship.position, desiredCamera, [ship, playerAvatar], { minDist: 9, clearance: 1.5 }));
       camera.up.set(0, 1, 0);
       camera.position.lerp(desiredCamera, 1 - Math.pow(0.00008, delta));
       lookTarget.copy(ship.position).addScaledVector(worldForward, 7);
@@ -4822,6 +4735,7 @@
       velocity.y = move.y;
       velocity.z = move.z;
       ship.position.addScaledVector(move, delta);
+      resolveShipTerrain();
     }
     updateFlightCamera(delta);
   }
@@ -5404,6 +5318,7 @@
       setStatus(
         "UNIVERSE GENERATED // FLIGHT SYSTEM ONLINE"
       );
+      try { autoClaimCharacter(); } catch (error) { console.warn("[Kepler Reach] Character auto-claim failed:", error); }
 
       const statusElement =
         document.getElementById("kr-status");
@@ -5436,6 +5351,8 @@
             if (navReadout.children[2]) navReadout.children[2].style.display = "";
             if (navReadout.children[3]) navReadout.children[3].style.display = "";
           }
+          advanceAstronomy(delta);
+          applyAgentControls(time);
           if (buggyMode) updateBuggy(delta);
           else if (onFoot) updateOnFoot(delta);
           else if (shipParked) {
@@ -5451,8 +5368,9 @@
           updateSolarCommonsLife(time);
           updateAvatarAnimation(time);
           updateEquipment(delta,time);
+          restoreAgentControls();
+          runControllables(delta);
           updateNavigation();
-          advanceAstronomy(delta);
           updateHUD();
           renderer.render(scene, camera);
         } catch (error) {
@@ -5487,12 +5405,907 @@
   }
 
   // ============================================================
+  // SHARED CAMERA COLLISION + SHIP TERRAIN COLLISION // v0.3.82
+  //
+  // One collision pass for every camera (surface, jetpack, station,
+  // buggy, ship). Terrain is tested analytically by marching the camera
+  // ray against the heightfield; everything else uses a cached list of
+  // solid meshes that is pre-filtered by distance, so we no longer
+  // raycast the whole scene (planet sphere included) every frame.
+  // ============================================================
+
+  const cameraBlockerCache = { list: [], stamp: -1e9, scratch: [] };
+
+  function refreshCameraBlockers(force) {
+    const now = performance.now();
+    if (!force && now - cameraBlockerCache.stamp < 1500) return cameraBlockerCache.list;
+    cameraBlockerCache.stamp = now;
+    const list = [];
+    if (scene) {
+      scene.updateMatrixWorld(true);
+      scene.traverse(o => {
+        if (!o.isMesh || !o.geometry) return;
+        if (o.userData && o.userData.krTerrainMesh) return;
+        const m = o.material;
+        if (m && !Array.isArray(m) && m.transparent && m.depthWrite === false) return;
+        let n = o, skip = false;
+        while (n) {
+          if (n.userData && n.userData.noCameraCollision) { skip = true; break; }
+          n = n.parent;
+        }
+        if (skip) return;
+        let radius = Infinity;
+        if (!o.isInstancedMesh) {
+          if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+          const bs = o.geometry.boundingSphere;
+          if (bs) radius = (bs.center.length() + bs.radius) * o.matrixWorld.getMaxScaleOnAxis();
+        }
+        o.userData.krCamRadius = radius;
+        list.push(o);
+      });
+    }
+    cameraBlockerCache.list = list;
+    return list;
+  }
+
+  function cameraHitIgnored(object, ignore) {
+    let n = object;
+    while (n) {
+      if (ignore && ignore.includes(n)) return true;
+      if (n.userData && n.userData.noCameraCollision) return true;
+      if (n.visible === false) return true;
+      if (n === scene) return false;
+      n = n.parent;
+    }
+    return true; // detached from the scene: stale cache entry
+  }
+
+  function cameraTerrainLimit(target, dir, len, clearance) {
+    let limit = len;
+    const bodies = [
+      { root: planetWorld, radius: CONFIG.planetRadius, profile: terrainProfile, g: BODY_PHYSICS.haven.gravity },
+      { root: moonWorld, radius: CONFIG.moonRadius, profile: moonTerrainProfile, g: BODY_PHYSICS.moon.gravity }
+    ];
+    const probe = new THREE.Vector3(), centre = new THREE.Vector3();
+    const steps = 10;
+    for (const b of bodies) {
+      if (!b.root) continue;
+      b.root.getWorldPosition(centre);
+      if (centre.distanceTo(target) - b.radius > len + 60) continue;
+      for (let s = 1; s <= steps; s++) {
+        const t = len * s / steps;
+        probe.copy(target).addScaledVector(dir, t);
+        const st = getCelestialBodyState(b.root, b.radius, b.profile, probe, b.g);
+        if (st.altitude < clearance) {
+          limit = Math.min(limit, Math.max(0, len * (s - 1) / steps));
+          break;
+        }
+      }
+    }
+    return limit;
+  }
+
+  // Returns a camera position that is no farther from `target` than
+  // `desired`, pulled in front of terrain and solid meshes.
+  function resolveCameraSafe(target, desired, ignore, opts) {
+    opts = opts || {};
+    const minDist = opts.minDist !== undefined ? opts.minDist : 0.72;
+    const clearance = opts.clearance !== undefined ? opts.clearance : WORLD_SCALE.cameraClearance;
+    const dir = desired.clone().sub(target), len = dir.length();
+    if (!(len > 1e-4) || !isFinite(len)) return desired.clone();
+    dir.multiplyScalar(1 / len);
+    let safe = Math.min(len, cameraTerrainLimit(target, dir, len, 0.6));
+    if (cameraRaycaster) {
+      const blockers = refreshCameraBlockers(false), filtered = cameraBlockerCache.scratch, reach = len + 1;
+      filtered.length = 0;
+      for (let i = 0; i < blockers.length; i++) {
+        const o = blockers[i], r = o.userData.krCamRadius;
+        if (r !== Infinity) {
+          const e = o.matrixWorld.elements, dx = e[12] - target.x, dy = e[13] - target.y, dz = e[14] - target.z, lim = reach + r;
+          if (dx * dx + dy * dy + dz * dz > lim * lim) continue;
+        }
+        filtered.push(o);
+      }
+      cameraRaycaster.near = 0.12;
+      cameraRaycaster.far = len + 0.5;
+      cameraRaycaster.set(target, dir);
+      const hits = cameraRaycaster.intersectObjects(filtered, false);
+      for (const hit of hits) {
+        if (hit.distance > 0.25 && !cameraHitIgnored(hit.object, ignore)) {
+          safe = Math.min(safe, hit.distance - clearance);
+          break;
+        }
+      }
+    }
+    safe = Math.max(Math.min(minDist, len), Math.min(len, safe));
+    return target.clone().addScaledVector(dir, safe);
+  }
+
+  // The spacecraft can no longer fly through Haven or Luna. Hull clearance is
+  // 2.0 m, below the touchdown altitude, so landing and launching never pop.
+  const SHIP_MIN_ALTITUDE = 2.0;
+  let shipTerrainContact = false;
+  function resolveShipTerrain() {
+    shipTerrainContact = false;
+    if (!ship || !THREE) return;
+    const bodies = [
+      { root: planetWorld, radius: CONFIG.planetRadius, profile: terrainProfile, floor: -0.3 },
+      { root: moonWorld, radius: CONFIG.moonRadius, profile: moonTerrainProfile, floor: -1e9 }
+    ];
+    for (const b of bodies) {
+      if (!b.root) continue;
+      const local = b.root.worldToLocal(ship.position.clone()), dist = local.length();
+      if (dist < 1e-3 || dist > b.radius + 40) continue;
+      const radial = local.clone().multiplyScalar(1 / dist);
+      const elevation = Math.max(b.profile(radial.x, radial.y, radial.z).elevation, b.floor);
+      const minRadius = b.radius + elevation + SHIP_MIN_ALTITUDE;
+      if (dist < minRadius) {
+        local.copy(radial).multiplyScalar(minRadius);
+        ship.position.copy(b.root.localToWorld(local));
+        shipTerrainContact = true;
+      }
+    }
+  }
+
+  // ============================================================
+  // CONTROL LAYER // v0.3.82
+  //
+  // ONE vocabulary of control for every kind of player:
+  //   - humans      : keyboard / touch (existing handlers, unchanged)
+  //   - scripts     : KeplerReach.input.set({...}) every frame or with a TTL
+  //   - LLM agents  : KeplerReach.agent.command({...}) -> JSON state back
+  //
+  // Intent fields (all optional, -1..1 unless noted):
+  //   forward  walk / throttle / ship thrust
+  //   turn     +1 = right
+  //   strafe   ship sideways, +1 = right
+  //   pitch    +1 = nose up (jetpack and ship)
+  //   boost    boolean: jetpack launch/thrust (kinetic field)
+  //   lookX/lookY  camera orbit, same sign as the LOOK pad arrows
+  //
+  // Everything an intent cannot express (boarding, buying, talking...) is a
+  // named ACTION. New vehicles/gadgets plug in with registerControllable().
+  // ============================================================
+
+  const API_SCHEMA_VERSION = "kepler-reach/1";
+  const INTENT_FIELDS = Object.freeze({
+    forward: { type: "number", range: [-1, 1], description: "Walk / drive / ship thrust. +1 forward, -1 back." },
+    turn: { type: "number", range: [-1, 1], description: "Steer or turn. +1 right, -1 left." },
+    strafe: { type: "number", range: [-1, 1], description: "Ship sideways translation. +1 right." },
+    pitch: { type: "number", range: [-1, 1], description: "Nose up (+1) or down (-1) in jetpack flight and the ship." },
+    boost: { type: "boolean", description: "Hold true to fire the jetpack (kinetic field) and fly along your nose." },
+    lookX: { type: "number", range: [-1, 1], description: "Orbit the camera sideways (like the LOOK pad right arrow)." },
+    lookY: { type: "number", range: [-1, 1], description: "Orbit the camera vertically (like the LOOK pad up arrow)." }
+  });
+  const INTENT_ALIASES = Object.freeze({ move: "forward", thrust: "forward", throttle: "forward", steer: "turn", yaw: "turn", jump: "boost" });
+  const MODE_HELP = Object.freeze({
+    walk: "On foot. forward walks, turn rotates, boost launches the jetpack, look orbits the camera.",
+    jetpack: "Kinetic-field flight. boost thrusts along your nose, turn yaws, pitch tilts. Release boost to descend.",
+    ship: "Spacecraft. forward thrusts along the nose, strafe slides sideways, turn yaws, pitch tilts.",
+    buggy: "Luna utility rover. forward is throttle, turn steers.",
+    boat: "Passenger launch at the helm. forward is throttle, turn steers.",
+    jetski: "Personal watercraft. forward is throttle, turn steers."
+  });
+  const AGENT_KEYS = ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "space"];
+  const agentControl = {
+    active: false, by: null, expires: 0, saved: null,
+    intent: { forward: 0, turn: 0, strafe: 0, pitch: 0, lookX: 0, lookY: 0, boost: false }
+  };
+  let controlFrameIntent = { forward: 0, turn: 0, strafe: 0, pitch: 0, lookX: 0, lookY: 0, boost: false };
+
+  function clampUnit(v) { return Math.max(-1, Math.min(1, v)); }
+  function roundTo(n, d) { const m = Math.pow(10, d === undefined ? 2 : d); return Math.round(n * m) / m; }
+  function vecJson(v) { return v ? { x: roundTo(v.x), y: roundTo(v.y), z: roundTo(v.z) } : null; }
+
+  function sanitizeIntent(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object") return out;
+    const num = v => { const n = Number(v); return Number.isFinite(n) ? clampUnit(n) : 0; };
+    for (const key of Object.keys(raw)) {
+      const name = INTENT_ALIASES[key] || key;
+      if (name === "boost") out.boost = !!raw[key];
+      else if (name in agentControl.intent && name !== "boost") out[name] = num(raw[key]);
+    }
+    return out;
+  }
+
+  function getControlMode() {
+    if (buggyMode) return "buggy";
+    if (onFoot) {
+      if (maritimeDriving) return maritimeDrivingType === "jetski" ? "jetski" : "boat";
+      return playerInSpaceFlight ? "jetpack" : "walk";
+    }
+    return "ship";
+  }
+
+  function setAgentIntent(raw, opts) {
+    opts = opts || {};
+    const patch = sanitizeIntent(raw);
+    const intent = agentControl.intent;
+    if (!opts.merge) { intent.forward = intent.turn = intent.strafe = intent.pitch = intent.lookX = intent.lookY = 0; intent.boost = false; }
+    Object.assign(intent, patch);
+    let ttl = opts.ttlMs === undefined ? 800 : Number(opts.ttlMs);
+    if (!Number.isFinite(ttl) || ttl < 0) ttl = 800;
+    ttl = Math.min(ttl, 120000);
+    // ttl 0 = hold until clear() is called. The default (800 ms) is a
+    // watchdog: if an agent goes quiet, its character stops instead of running away.
+    agentControl.expires = ttl === 0 ? Infinity : performance.now() + ttl;
+    agentControl.active = true;
+    agentControl.by = String(opts.by || agentControl.by || "agent").slice(0, 60);
+    return { ...intent };
+  }
+
+  function clearAgentIntent() {
+    const intent = agentControl.intent;
+    intent.forward = intent.turn = intent.strafe = intent.pitch = intent.lookX = intent.lookY = 0;
+    intent.boost = false;
+    agentControl.active = false;
+    agentControl.expires = 0;
+    return true;
+  }
+
+  function humanIntent() {
+    const b = v => (v ? 1 : 0);
+    return {
+      forward: clampUnit(b(keys.w) - b(keys.s) + touchFlightThrust),
+      turn: clampUnit(b(keys.d) - b(keys.a) - touchFlightYaw),
+      strafe: clampUnit(b(keys.arrowright) - b(keys.arrowleft) + touchFlightStrafe),
+      pitch: clampUnit(b(keys.arrowup) - b(keys.arrowdown) + touchFlightPitch),
+      lookX: clampUnit(lookInputX), lookY: clampUnit(lookInputY),
+      boost: !!keys.space
+    };
+  }
+
+  // Called at the start of every frame. Merges agent intent into the same
+  // inputs the keyboard and touch pads write, so ONE movement implementation
+  // serves everybody. Restored after the frame by restoreAgentControls().
+  function applyAgentControls() {
+    agentControl.saved = null;
+    if (agentControl.active && performance.now() > agentControl.expires) clearAgentIntent();
+    const human = humanIntent(), a = agentControl.intent;
+    const merged = {
+      forward: clampUnit(human.forward + (agentControl.active ? a.forward : 0)),
+      turn: clampUnit(human.turn + (agentControl.active ? a.turn : 0)),
+      strafe: clampUnit(human.strafe + (agentControl.active ? a.strafe : 0)),
+      pitch: clampUnit(human.pitch + (agentControl.active ? a.pitch : 0)),
+      lookX: clampUnit(human.lookX + (agentControl.active ? a.lookX : 0)),
+      lookY: clampUnit(human.lookY + (agentControl.active ? a.lookY : 0)),
+      boost: human.boost || (agentControl.active && a.boost)
+    };
+    controlFrameIntent = merged;
+    const capture = activeControllable() && activeControllable().captureInput;
+    if (!agentControl.active && !capture) return;
+    const saved = { keys: {}, yaw: touchFlightYaw, pitch: touchFlightPitch, thrust: touchFlightThrust, strafe: touchFlightStrafe, lookX: lookInputX, lookY: lookInputY };
+    for (const k of AGENT_KEYS) saved.keys[k] = keys[k];
+    agentControl.saved = saved;
+    if (capture) {
+      // A registered vehicle owns the controls this frame: built-in movement sees neutral input.
+      for (const k of AGENT_KEYS) keys[k] = false;
+      touchFlightYaw = touchFlightPitch = touchFlightThrust = touchFlightStrafe = 0;
+      lookInputX = lookInputY = 0;
+      return;
+    }
+    const mode = getControlMode(), dz = 0.25;
+    if (mode === "ship") {
+      touchFlightYaw = clampUnit(touchFlightYaw - a.turn);
+      touchFlightPitch = clampUnit(touchFlightPitch + a.pitch);
+      touchFlightThrust = clampUnit(touchFlightThrust + a.forward);
+      touchFlightStrafe = clampUnit(touchFlightStrafe + a.strafe);
+    } else if (mode === "jetpack") {
+      touchFlightYaw = clampUnit(touchFlightYaw - a.turn);
+      touchFlightPitch = clampUnit(touchFlightPitch + a.pitch);
+      if (a.boost) keys.space = true;
+    } else {
+      if (a.forward > dz) keys.w = true; else if (a.forward < -dz) keys.s = true;
+      if (a.turn < -dz) keys.a = true; else if (a.turn > dz) keys.d = true;
+      if (mode === "walk" || mode === "buggy") {
+        lookInputX = clampUnit(lookInputX + a.lookX);
+        lookInputY = clampUnit(lookInputY + a.lookY);
+      }
+      if (mode === "walk" && a.boost) keys.space = true;
+    }
+  }
+
+  function restoreAgentControls() {
+    const s = agentControl.saved;
+    if (!s) return;
+    for (const k of AGENT_KEYS) keys[k] = s.keys[k];
+    touchFlightYaw = s.yaw; touchFlightPitch = s.pitch; touchFlightThrust = s.thrust; touchFlightStrafe = s.strafe;
+    lookInputX = s.lookX; lookInputY = s.lookY;
+    agentControl.saved = null;
+  }
+
+  // ------------------------------------------------------------
+  // PLUGGABLE VEHICLES / GADGETS
+  // ------------------------------------------------------------
+  const controllables = new Map();
+  const controllableWarned = new Set();
+  function activeControllable() {
+    for (const spec of controllables.values()) {
+      try { if (spec.isActive()) return spec; } catch (_) { /* ignore */ }
+    }
+    return null;
+  }
+  function registerControllable(spec) {
+    if (!spec || typeof spec !== "object") throw new Error("registerControllable needs a spec object.");
+    if (!validModelId(spec.id)) throw new Error("Controllable id must be 1-80 safe identifier characters.");
+    if (typeof spec.isActive !== "function") throw new Error("Controllable needs isActive().");
+    const record = {
+      id: spec.id, label: String(spec.label || spec.id), mode: String(spec.mode || spec.id),
+      help: String(spec.help || ""), captureInput: spec.captureInput !== false,
+      isActive: spec.isActive, applyIntent: typeof spec.applyIntent === "function" ? spec.applyIntent : null,
+      getState: typeof spec.getState === "function" ? spec.getState : null,
+      getObject: typeof spec.getObject === "function" ? spec.getObject : null,
+      actionNames: []
+    };
+    controllables.set(record.id, record);
+    if (spec.actions && typeof spec.actions === "object") {
+      for (const name of Object.keys(spec.actions)) {
+        const action = spec.actions[name];
+        const full = record.id + "." + name;
+        defineAction(full, { ...action, source: record.id });
+        record.actionNames.push(full);
+      }
+    }
+    return {
+      id: record.id,
+      unregister() {
+        for (const n of record.actionNames) actionRegistry.delete(n);
+        controllables.delete(record.id);
+      }
+    };
+  }
+  function runControllables(delta) {
+    for (const spec of controllables.values()) {
+      let active = false;
+      try { active = !!spec.isActive(); } catch (_) { active = false; }
+      if (!active || !spec.applyIntent) continue;
+      try { spec.applyIntent({ ...controlFrameIntent }, delta); }
+      catch (error) {
+        if (!controllableWarned.has(spec.id)) { controllableWarned.add(spec.id); console.error("[Kepler Reach] Controllable failed:", spec.id, error); }
+      }
+    }
+  }
+
+  // ------------------------------------------------------------
+  // ACTIONS
+  // ------------------------------------------------------------
+  const actionRegistry = new Map();
+  function defineAction(name, spec) {
+    if (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(name)) throw new Error("Invalid action name.");
+    if (!spec || typeof spec.run !== "function") throw new Error("Action needs run().");
+    actionRegistry.set(name, {
+      name, description: String(spec.description || ""), params: spec.params || {},
+      available: typeof spec.available === "function" ? spec.available : () => true,
+      run: spec.run, source: spec.source || "core"
+    });
+    return name;
+  }
+  function actionAvailability(a) {
+    let why = true;
+    try { why = a.available(); } catch (error) { why = "availability check failed"; }
+    return (why === true || why === null || why === undefined) ? true : String(why || "unavailable");
+  }
+  function listActions(includeUnavailable) {
+    const out = [];
+    for (const a of actionRegistry.values()) {
+      const why = actionAvailability(a);
+      if (why === true) out.push({ name: a.name, description: a.description, params: a.params, available: true, source: a.source });
+      else if (includeUnavailable) out.push({ name: a.name, description: a.description, params: a.params, available: false, reason: why, source: a.source });
+    }
+    return out;
+  }
+  function runAction(name, params) {
+    const a = actionRegistry.get(String(name));
+    if (!a) return { ok: false, error: "UNKNOWN_ACTION", name: String(name) };
+    const why = actionAvailability(a);
+    if (why !== true) return { ok: false, error: "UNAVAILABLE", reason: why };
+    try {
+      const result = a.run(params && typeof params === "object" ? params : {});
+      return { ok: true, result: result === undefined ? null : result };
+    } catch (error) {
+      return { ok: false, error: "ACTION_FAILED", message: String(error && error.message ? error.message : error) };
+    }
+  }
+
+  function buyAnywhere(name) {
+    const lists = [ranchShop, moonRxShop, sanchosShop];
+    for (const list of lists) {
+      const item = list.find(x => x.name.toLowerCase() === String(name).toLowerCase());
+      if (!item) continue;
+      if (ranchGame.credits < item.price) return { bought: false, reason: "NOT_ENOUGH_CREDITS", price: item.price, credits: ranchGame.credits };
+      ranchGame.credits -= item.price;
+      addRanchItem(item.name);
+      setStatus("PURCHASE COMPLETE // " + item.name + " ADDED TO INVENTORY");
+      return { bought: true, item: item.name, credits: ranchGame.credits };
+    }
+    return { bought: false, reason: "UNKNOWN_ITEM" };
+  }
+  function nearWorld(obj, range) {
+    if (!obj || !playerAvatar) return false;
+    return playerAvatar.position.distanceTo(obj.getWorldPosition(new THREE.Vector3())) <= range;
+  }
+  const needFoot = () => (onFoot && !buggyMode && !playerInSpaceFlight) ? true : "you must be on foot";
+
+  defineAction("board_ship", {
+    description: "Board the Space RV and launch (must be within 36 m of your ship or its landing pad).",
+    available: () => {
+      if (!onFoot || buggyMode || !ship || !landingMarker) return "you must be on foot";
+      const d = Math.min(playerAvatar.position.distanceTo(landingMarker.getWorldPosition(new THREE.Vector3())), playerAvatar.position.distanceTo(ship.position));
+      return d <= 36 ? true : "walk closer to your ship or its landing pad";
+    },
+    run: () => { boardShip(); return true; }
+  });
+  defineAction("disembark", {
+    description: "Leave the landed Space RV and step outside.",
+    available: () => (!onFoot && landingState === "landed") ? true : "the ship must be landed",
+    run: () => { disembark(); return true; }
+  });
+  defineAction("landing_assist", {
+    description: "Toggle automatic landing on the nearest landing beacon (must be within ~220 m).",
+    available: () => (!onFoot && !buggyMode && ship && landingButton && !landingButton.disabled) ? true : "fly the ship near a landing beacon",
+    run: () => { landingButton.click(); return { landingState }; }
+  });
+  defineAction("vehicle_toggle", {
+    description: "Enter or exit the Luna utility rover (within 13 m).",
+    available: () => (buggyMode || (onFoot && havenBuggy && !playerInSpaceFlight && nearWorld(havenBuggy, 13))) ? true : "no rover within reach",
+    run: () => { toggleBuggy(); return { driving: buggyMode }; }
+  });
+  defineAction("maritime_action", {
+    description: "Board, drive, or leave the passenger launch / personal watercraft when prompted.",
+    available: () => (maritimeInteractButton && maritimeInteractButton.dataset.active === "1") ? true : "no boat or watercraft prompt here",
+    run: () => { handleMaritimeAction(); return { driving: maritimeDriving }; }
+  });
+  defineAction("go_home", { description: "Return to the home position at Haven.", run: () => { returnHome(); return true; } });
+  defineAction("toggle_view", {
+    description: "Switch between first-person/cockpit and third-person/chase camera.",
+    available: () => (onFoot || ship) ? true : "not ready",
+    run: () => { toggleCameraMode(); return { view: cameraMode }; }
+  });
+  defineAction("set_view", {
+    description: "Set the camera view.", params: { mode: "first | third" },
+    available: () => (onFoot || ship) ? true : "not ready",
+    run: p => { const want = p.mode === "first" ? "first" : "third"; if (cameraMode !== want) toggleCameraMode(); return { view: cameraMode }; }
+  });
+  defineAction("recenter_camera", { description: "Reset the camera behind your character or ship.", run: () => { recenterCamera(); return true; } });
+  defineAction("brake", {
+    description: "Stop all ship movement immediately.",
+    available: () => (!onFoot && !buggyMode && ship) ? true : "you must be flying the ship",
+    run: () => { brakeShip(); return true; }
+  });
+  defineAction("park", {
+    description: "Hold the ship at its position and heading, or release the hold.", params: { value: "boolean, default true" },
+    available: () => (!onFoot && !buggyMode && ship) ? true : "you must be flying the ship",
+    run: p => { setShipParked(p.value === undefined ? true : !!p.value); return { parked: shipParked }; }
+  });
+  defineAction("fire_ray_gun", {
+    description: "Fire the ray gun along your view (practice targets are harmless).",
+    available: () => (onFoot && !buggyMode) ? true : "you must be on foot",
+    run: () => { fireRayGun(); return { shots: explorerEquipment.shots, hits: explorerEquipment.hits }; }
+  });
+  defineAction("open_wildlife_gates", {
+    description: "Open the wildlife habitat gates when standing at the gate.",
+    available: () => (habitatGateButton && habitatGateButton.style.display === "block") ? true : "not at the habitat gate",
+    run: () => { openWildlifeHabitat(); return true; }
+  });
+  defineAction("buy", {
+    description: "Buy an item from the nearby shop (Lemmy's Ranch, Moon Man's Rx, Sancho's Armory).", params: { item: "item name, e.g. Trail Rations" },
+    available: needFoot,
+    run: p => buyAnywhere(p.item)
+  });
+  defineAction("accept_quest", { description: "Ask Lemmy for work: accept the observatory delivery quest.", available: needFoot, run: () => { acceptRanchQuest(); return { quests: ranchGame.quests.map(q => ({ ...q })) }; } });
+  defineAction("talk_nearest", {
+    description: "Talk to the nearest Solar Commons resident; repeated calls advance the conversation.",
+    available: () => solarCommonsNearbyNPC ? true : "nobody to talk to nearby",
+    run: () => {
+      showSolarDialogue();
+      const speaker = solarCommonsNearbyNPC.name, line = solarDialogueText.textContent;
+      solarCommonsDialogueIndex++;
+      return { speaker, line };
+    }
+  });
+
+  // ------------------------------------------------------------
+  // CHARACTERS: who is being played, by whom, and how
+  // ------------------------------------------------------------
+  const characterRoster = new Map();
+  const characterClaims = new Map();
+  const characterHeld = new Set();
+  const CHARACTER_USERNAME_BINDINGS = {}; // e.g. { "moon man": "moonman", "benis": "benis" }
+  let localCharacterId = "explorer";
+  let nameTagSprite = null;
+  function characterAIHeld(id) { return characterHeld.has(id); }
+
+  function registerCharacter(spec) {
+    if (!spec || !/^[a-z0-9][a-z0-9_-]{0,39}$/.test(String(spec.id || ""))) throw new Error("Character id must be lowercase letters, digits, - or _.");
+    const record = {
+      id: spec.id, name: String(spec.name || spec.id).slice(0, 40), role: String(spec.role || "").slice(0, 80),
+      description: String(spec.description || "").slice(0, 240),
+      usernames: Array.isArray(spec.usernames) ? spec.usernames.map(u => String(u).slice(0, 60)) : [],
+      getBody: typeof spec.getBody === "function" ? spec.getBody : null,
+      spawn: typeof spec.spawn === "function" ? spec.spawn : null
+    };
+    characterRoster.set(record.id, record);
+    return record.id;
+  }
+
+  function resetToOnFootState() {
+    if (buggyMode) { try { exitBuggy(); } catch (_) { buggyMode = false; } }
+    maritimeDriving = false; maritimeOnBoat = false;
+    if (playerAvatar.parent !== scene) scene.attach(playerAvatar);
+    playerSeatedInShip = false;
+    playerGrounded = true; playerVerticalSpeed = 0; playerAirHeight = 0;
+    explorerEquipment.thrusting = false; playerInSpaceFlight = false;
+    if (playerFlightVelocity) playerFlightVelocity.set(0, 0, 0);
+    clearKeys();
+  }
+  function finishOnFootEntry() {
+    recenterCamera(); orientAvatar();
+    onFoot = true; avatarIsWalking = false; playerAvatar.visible = cameraMode === "third";
+    if (ship) ship.visible = true;
+    if (disembarkButton) disembarkButton.style.display = "none";
+    if (boardShipButton) boardShipButton.style.display = "block";
+    if (landingButton) landingButton.style.display = "none";
+    if (navLabel) navLabel.style.display = "none";
+    if (approachLine) approachLine.visible = false;
+    createPracticeTargets();
+  }
+  function placePlayerInStationFrame(root, localPosition, faceWorld) {
+    resetToOnFootState();
+    stationInteriorMode = true; stationWalkRoot = root; activeSurfaceBody = "haven";
+    root.updateWorldMatrix(true, false);
+    playerAvatar.position.copy(root.localToWorld(localPosition.clone()));
+    const q = root.getWorldQuaternion(new THREE.Quaternion());
+    playerUp.set(0, 1, 0).applyQuaternion(q).normalize();
+    let heading = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+    if (faceWorld) heading = faceWorld.clone().sub(playerAvatar.position);
+    heading.addScaledVector(playerUp, -heading.dot(playerUp));
+    if (heading.lengthSq() < 1e-8) heading.set(0, 0, -1).applyQuaternion(q);
+    playerHeading.copy(heading.normalize()); playerFlightForward.copy(playerHeading);
+    finishOnFootEntry();
+  }
+  function placePlayerOnSurface(worldPosition, body, faceWorld) {
+    resetToOnFootState();
+    stationInteriorMode = false; stationWalkRoot = null; activeSurfaceBody = body === "moon" ? "moon" : "haven";
+    const surface = sampleSurface(worldPosition);
+    playerAvatar.position.copy(surface.position); playerUp.copy(surface.up);
+    let heading = faceWorld ? faceWorld.clone().sub(surface.position) : playerHeading.clone();
+    heading.addScaledVector(playerUp, -heading.dot(playerUp));
+    if (heading.lengthSq() < 1e-8) heading.set(1, 0, 0).addScaledVector(playerUp, -playerUp.x);
+    playerHeading.copy(heading.normalize()); playerFlightForward.copy(playerHeading);
+    finishOnFootEntry();
+  }
+
+  function setPlayerNameTag(text) {
+    if (!THREE || !playerAvatar) return;
+    if (nameTagSprite) {
+      playerAvatar.remove(nameTagSprite);
+      if (nameTagSprite.material.map) nameTagSprite.material.map.dispose();
+      nameTagSprite.material.dispose();
+      nameTagSprite = null;
+    }
+    if (!text) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = 512; canvas.height = 128;
+    const g = canvas.getContext("2d");
+    g.fillStyle = "rgba(8,18,26,.72)"; g.fillRect(0, 24, 512, 80);
+    g.strokeStyle = "#9bd3c6"; g.lineWidth = 4; g.strokeRect(2, 26, 508, 76);
+    g.fillStyle = "#f4ead0"; g.font = "bold 44px monospace"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(String(text).slice(0, 22), 256, 64);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+    sprite.name = "KR_PLAYER_NAMETAG"; sprite.scale.set(3.2, 0.8, 1); sprite.position.set(0, 2.7, 0);
+    sprite.userData.noCameraCollision = true;
+    playerAvatar.add(sprite);
+    nameTagSprite = sprite;
+  }
+
+  function characterSummary(id) {
+    id = id || localCharacterId;
+    const c = characterRoster.get(id), claim = characterClaims.get(id);
+    const clientName = (typeof window !== "undefined" && window.CLIENT && window.CLIENT.name) ? String(window.CLIENT.name) : null;
+    return {
+      id, name: c ? (id === "explorer" ? (clientName || c.name) : c.name) : id, role: c ? c.role : "",
+      controller: claim ? claim.controller : "human", claimedBy: claim ? claim.by : (id === "explorer" ? clientName : null),
+      since: claim ? claim.since : null, aiSuspended: characterHeld.has(id)
+    };
+  }
+
+  function releaseCharacter(id, silent) {
+    id = String(id || localCharacterId);
+    const claim = characterClaims.get(id), c = characterRoster.get(id);
+    if (!claim) return { ok: false, error: "NOT_CLAIMED" };
+    characterClaims.delete(id);
+    characterHeld.delete(id);
+    const body = c && c.getBody ? c.getBody() : null;
+    if (body) body.visible = true;
+    if (localCharacterId === id) { localCharacterId = "explorer"; setPlayerNameTag(null); }
+    if (!silent) setStatus("CHARACTER RELEASED // " + (c ? c.name.toUpperCase() : id));
+    return { ok: true };
+  }
+
+  function claimCharacter(id, opts) {
+    opts = opts || {};
+    id = String(id);
+    const c = characterRoster.get(id);
+    if (!c) return { ok: false, error: "UNKNOWN_CHARACTER", id };
+    if (!THREE || !playerAvatar || !playerUp) return { ok: false, error: "NOT_READY" };
+    const controller = ["human", "agent", "script"].includes(opts.controller) ? opts.controller : "human";
+    const clientName = (window.CLIENT && window.CLIENT.name) ? String(window.CLIENT.name) : "local";
+    const by = String(opts.by || clientName).slice(0, 60);
+    const existing = characterClaims.get(id);
+    if (existing && existing.by !== by && !opts.force) return { ok: false, error: "ALREADY_CLAIMED", claimedBy: existing.by };
+    if (localCharacterId !== id && localCharacterId !== "explorer") releaseCharacter(localCharacterId, true);
+    characterClaims.set(id, { by, controller, since: Date.now() });
+    localCharacterId = id;
+    if (id !== "explorer") {
+      characterHeld.add(id);
+      const body = c.getBody ? c.getBody() : null;
+      if (body) body.visible = false;
+      try { if (c.spawn) c.spawn(); } catch (error) { console.warn("[Kepler Reach] Character spawn failed:", id, error); }
+      setPlayerNameTag(c.name.toUpperCase() + (c.role ? " // " + c.role.toUpperCase() : ""));
+      setStatus("NOW PLAYING " + c.name.toUpperCase() + " // " + controller.toUpperCase() + " (" + by + ")");
+    }
+    return { ok: true, character: characterSummary(id) };
+  }
+
+  function bindUsername(username, id) {
+    if (!characterRoster.has(String(id))) return false;
+    CHARACTER_USERNAME_BINDINGS[String(username).trim().toLowerCase()] = String(id);
+    return true;
+  }
+  function autoClaimCharacter(username) {
+    const raw = username || (window.CLIENT && window.CLIENT.name) || "";
+    const name = String(raw).trim().toLowerCase();
+    if (!name) return null;
+    let id = CHARACTER_USERNAME_BINDINGS[name];
+    if (!id) for (const c of characterRoster.values()) if (c.usernames.some(u => u.toLowerCase() === name)) { id = c.id; break; }
+    return id ? claimCharacter(id, { by: String(raw), controller: "human" }) : null;
+  }
+
+  const benisBody = () => (lastStopDinerRef && lastStopDinerRef.userData.dockScene && lastStopDinerRef.userData.dockScene.userData.benis) || null;
+  registerCharacter({ id: "explorer", name: "Explorer", role: "Explorer", description: "The default traveller. Anyone can play this one." });
+  registerCharacter({
+    id: "benis", name: "Benis", role: "Sheriff",
+    description: "Frog-like humanoid sheriff of The Last Stop. Patrols the jail until someone plays him.",
+    getBody: benisBody,
+    spawn() {
+      const body = benisBody();
+      if (!body || !lastStopDinerRef) return;
+      const local = lastStopDinerRef.worldToLocal(body.getWorldPosition(new THREE.Vector3()));
+      placePlayerInStationFrame(lastStopDinerRef, new THREE.Vector3(local.x, 5.9, local.z));
+    }
+  });
+  registerCharacter({
+    id: "moonman", name: "Moon Man", role: "Proprietor, Moon Man's Rx",
+    description: "Runs the apothecary and exploration-gear shop on Haven.",
+    getBody: () => null,
+    spawn() { if (moonRxRef) placePlayerOnSurface(moonRxRef.localToWorld(new THREE.Vector3(0, 0, 9)), "haven", moonRxRef.getWorldPosition(new THREE.Vector3())); }
+  });
+  registerCharacter({
+    id: "sancho", name: "Sancho", role: "Proprietor, Sancho's Armory",
+    description: "Sells frontier sidearms and practical hardware on Haven.",
+    getBody: () => null,
+    spawn() { if (sanchosArmoryRef) placePlayerOnSurface(sanchosArmoryRef.localToWorld(new THREE.Vector3(0, 0, 9)), "haven", sanchosArmoryRef.getWorldPosition(new THREE.Vector3())); }
+  });
+
+  // ------------------------------------------------------------
+  // STATE SNAPSHOT (JSON-safe, for scripts and LLM agents)
+  // ------------------------------------------------------------
+  function getControlFrame() {
+    const mode = getControlMode();
+    let obj = null;
+    if (mode === "ship") obj = ship;
+    else if (mode === "buggy") obj = havenBuggy;
+    else if (mode === "boat") obj = maritimeBoat;
+    else if (mode === "jetski") obj = maritimeJetski;
+    const custom = activeControllable();
+    if (custom && custom.getObject) { try { obj = custom.getObject() || obj; } catch (_) { /* ignore */ } }
+    if (obj) {
+      const q = obj.getWorldQuaternion(new THREE.Quaternion());
+      return { pos: obj.getWorldPosition(new THREE.Vector3()), up: new THREE.Vector3(0, 1, 0).applyQuaternion(q).normalize(), forward: new THREE.Vector3(0, 0, -1).applyQuaternion(q).normalize() };
+    }
+    if (!playerAvatar || !playerUp || !playerHeading) return null;
+    const fwd = (playerInSpaceFlight && playerFlightForward ? playerFlightForward : playerHeading).clone();
+    return { pos: playerAvatar.position.clone(), up: playerUp.clone(), forward: fwd.normalize() };
+  }
+
+  function nearbyEntities(frame, maxRange, limit) {
+    const out = [];
+    const right = frame.forward.clone().cross(frame.up);
+    if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+    right.normalize();
+    const add = (id, kind, name, obj, extra) => {
+      if (!obj) return;
+      try {
+        const p = obj.getWorldPosition(new THREE.Vector3()), v = p.clone().sub(frame.pos), d = v.length();
+        if (d > maxRange || d < 0.01) return;
+        const flat = v.clone().addScaledVector(frame.up, -v.dot(frame.up));
+        out.push({ id, kind, name, distanceM: roundTo(d, 1), bearingDeg: roundTo(Math.atan2(flat.dot(right), flat.dot(frame.forward)) * 180 / Math.PI, 0), ...(extra || {}) });
+      } catch (_) { /* ignore */ }
+    };
+    add("space-rv", "vehicle", "Space RV", ship, { hint: "board_ship within 36 m" });
+    add("luna-rover", "vehicle", "Luna Utility Rover", havenBuggy, { hint: "vehicle_toggle within 13 m" });
+    add("passenger-launch", "vehicle", "Passenger Launch", maritimeBoat);
+    add("personal-watercraft", "vehicle", "Personal Watercraft", maritimeJetski);
+    add("landing-pad", "landing-pad", "Landing beacon", landingMarker, { hint: "landing_assist within 220 m" });
+    add("lemmy", "npc", "Lemmy", bartenderNpcRef, { hint: "Lemmy's Ranch: buy, accept_quest" });
+    add("moonman-rx", "shop", "Moon Man's Rx", moonRxRef, { hint: "buy within 24 m" });
+    add("sanchos-armory", "shop", "Sancho's Armory", sanchosArmoryRef, { hint: "buy within 24 m" });
+    add("whizz-dance-house", "venue", "Whizz's Dance House", whizzDanceRef);
+    add("wildlife-gates", "poi", "Wildlife habitat gates", habitatGate, { hint: "open_wildlife_gates within 28 m" });
+    const dock = lastStopDinerRef && lastStopDinerRef.userData.dockScene && lastStopDinerRef.userData.dockScene.userData;
+    if (dock) {
+      if (localCharacterId !== "benis") add("benis", "npc", "Benis (Sheriff)", dock.benis);
+      add("mia", "npc", "Mia", dock.mia);
+    }
+    const npcs = solarHabitatStation && solarHabitatStation.userData.biosphere && solarHabitatStation.userData.biosphere.npcs;
+    if (npcs) for (const npc of npcs) add("solar-" + String(npc.name).toLowerCase().replace(/[^a-z0-9]+/g, "-"), "npc", npc.name, npc.group, { hint: "talk_nearest within 8.5 m" });
+    for (const spec of controllables.values()) {
+      if (!spec.getObject) continue;
+      try { add(spec.id, "vehicle", spec.label, spec.getObject()); } catch (_) { /* ignore */ }
+    }
+    out.sort((a, b) => a.distanceM - b.distanceM);
+    return out.slice(0, limit || 14);
+  }
+
+  function describeLocation() {
+    let station = null;
+    if (onFoot && stationInteriorMode && stationWalkRoot) {
+      if (stationWalkRoot === lastStopDinerRef) station = "last-stop";
+      else if (stationWalkRoot === solarHabitatStation) station = "solar-commons";
+      else if (stationWalkRoot === havenPortRoot) station = "l-astrolabe";
+      else if (stationWalkRoot === havenShoreDockRoot) station = "quai-de-haven";
+      else if (stationWalkRoot === maritimeBoat) station = "passenger-launch";
+    }
+    const pos = (getControlFrame() || {}).pos;
+    let nearest = null, bodies = [];
+    if (pos && planetWorld && moonWorld) {
+      const h = getCelestialBodyState(planetWorld, CONFIG.planetRadius, terrainProfile, pos, BODY_PHYSICS.haven.gravity);
+      const l = getCelestialBodyState(moonWorld, CONFIG.moonRadius, moonTerrainProfile, pos, BODY_PHYSICS.moon.gravity);
+      nearest = h.altitude <= l.altitude ? { body: "haven", altitudeM: roundTo(h.altitude, 1) } : { body: "luna", altitudeM: roundTo(l.altitude, 1) };
+      // upM points away from each body's centre: fly along -upM to descend toward it.
+      bodies = [
+        { body: "haven", altitudeM: roundTo(h.altitude, 1), radiusM: CONFIG.planetRadius, centerM: vecJson(planetWorld.getWorldPosition(new THREE.Vector3())), upM: vecJson(h.up) },
+        { body: "luna", altitudeM: roundTo(l.altitude, 1), radiusM: CONFIG.moonRadius, centerM: vecJson(moonWorld.getWorldPosition(new THREE.Vector3())), upM: vecJson(l.up) }
+      ];
+    }
+    const gravity = pos ? queryGravityField(pos) : null;
+    return {
+      station, surfaceBody: station ? null : (onFoot ? (activeSurfaceBody === "moon" ? "luna" : "haven") : null),
+      nearestBody: nearest, bodies, gravityMS2: gravity ? roundTo(gravity.magnitude, 2) : 0, gravityField: gravity ? gravity.id : null
+    };
+  }
+
+  function getAgentState() {
+    if (!THREE || !playerAvatar || !playerUp || destroyed) return { api: API_SCHEMA_VERSION, version: CONFIG.version, ready: false };
+    const frame = getControlFrame();
+    if (!frame) return { api: API_SCHEMA_VERSION, version: CONFIG.version, ready: false };
+    const mode = getControlMode(), custom = activeControllable();
+    const speed = mode === "ship" ? Math.hypot(velocity.x, velocity.y, velocity.z)
+      : mode === "buggy" ? Math.abs(buggySpeed)
+      : mode === "jetpack" ? (playerFlightVelocity ? playerFlightVelocity.length() : 0)
+      : (mode === "walk" && avatarIsWalking) ? WORLD_SCALE.walkSpeed : 0;
+    const surface = (mode === "walk" && !stationInteriorMode) ? sampleSurface(playerAvatar.position) : null;
+    const state = {
+      api: API_SCHEMA_VERSION, version: CONFIG.version, ready: true, timeS: roundTo(performance.now() / 1000, 2),
+      character: characterSummary(),
+      controller: { source: agentControl.active ? agentControl.by : "human", agentIntentActive: agentControl.active, agentIntent: { ...agentControl.intent } },
+      mode: custom ? custom.mode : mode, modeHelp: custom ? custom.help : MODE_HELP[mode], view: cameraMode,
+      location: describeLocation(),
+      self: {
+        positionM: vecJson(frame.pos), up: vecJson(frame.up), forward: vecJson(frame.forward), speedMS: roundTo(speed, 1),
+        grounded: mode === "walk" ? !!playerGrounded : false, onFoot, inVehicle: mode !== "walk" && mode !== "jetpack",
+        slopeDegrees: surface ? roundTo(surface.slopeDegrees, 1) : null
+      },
+      ship: ship ? {
+        parked: shipParked, landingState, terrainContact: shipTerrainContact,
+        positionM: vecJson(ship.position), occupied: !onFoot
+      } : null,
+      rover: havenBuggy ? { driving: buggyMode, occupants: Array.from(havenBuggy.userData.occupants ? havenBuggy.userData.occupants.values() : []).map(o => ({ id: o.id, type: o.type, label: o.label, slot: o.slot })) } : null,
+      nearby: nearbyEntities(frame, 160, 14),
+      inventory: ranchGame.inventory.map(x => ({ ...x })), credits: ranchGame.credits, quests: ranchGame.quests.map(x => ({ ...x })),
+      equipment: { rayGun: { shots: explorerEquipment.shots, hits: explorerEquipment.hits }, jetpackThrusting: explorerEquipment.thrusting },
+      actions: listActions(false).map(a => a.name),
+      custom: null
+    };
+    if (custom && custom.getState) { try { state.custom = custom.getState(); } catch (error) { state.custom = { error: String(error && error.message ? error.message : error) }; } }
+    return state;
+  }
+
+  function describeAgentApi() {
+    return {
+      api: API_SCHEMA_VERSION, version: CONFIG.version,
+      summary: "Kepler Reach is an arcade 3D exploration game. Read state(), choose an intent (continuous controls) and/or an action (one-off), repeat.",
+      intent: { fields: INTENT_FIELDS, aliases: INTENT_ALIASES, ttlMs: "default 800 (watchdog stop); 0 = hold until input.clear()" },
+      modes: MODE_HELP,
+      actions: listActions(true),
+      characters: Array.from(characterRoster.values()).map(c => ({ id: c.id, name: c.name, role: c.role, description: c.description, claim: characterClaims.has(c.id) ? characterSummary(c.id) : null })),
+      controllables: Array.from(controllables.values()).map(c => ({ id: c.id, label: c.label, mode: c.mode, help: c.help, actions: c.actionNames })),
+      command: {
+        usage: "await KeplerReach.agent.command({ character?, action?, params?, intent?, hold?, wait?, stop?, by? })",
+        notes: [
+          "intent is applied for `hold` ms (default 800), then expires, so an idle agent never runs away.",
+          "wait (ms, max 10000) pauses before the returned state snapshot; hold implies wait.",
+          "character claims a roster character (human, agent or script controllers); the local avatar becomes that character.",
+          "Every call returns { ok, state } where state is the same JSON as KeplerReach.state()."
+        ]
+      }
+    };
+  }
+
+  function agentGuide() {
+    return [
+      "You are playing Kepler Reach through window.KeplerReach.agent.",
+      "Loop: state = KeplerReach.state(); decide; await KeplerReach.agent.command({...}).",
+      "Movement: command({ intent:{ forward:1, turn:-0.5 }, hold:1000 }) moves for one second then stops.",
+      "One-off: command({ action:'board_ship' }) / 'vehicle_toggle' / 'buy' {item} / 'talk_nearest' ...",
+      "Look at state.nearby (distanceM, bearingDeg: 0 ahead, +90 right) to find things; state.actions lists what is possible right now.",
+      "state.mode tells you which controls matter (walk, jetpack, ship, buggy, boat, jetski) and modeHelp explains them.",
+      "To play a roster character: command({ character:'benis', by:'MyAgent' }). Release with KeplerReach.characters.release('benis').",
+      "Call KeplerReach.agent.describe() for the full machine-readable schema."
+    ].join("\n");
+  }
+
+  async function agentCommand(cmd) {
+    cmd = cmd && typeof cmd === "object" ? cmd : {};
+    const out = { ok: true };
+    const by = cmd.by ? String(cmd.by).slice(0, 60) : undefined;
+    if (cmd.character) {
+      out.character = claimCharacter(cmd.character, { by, controller: ["agent", "script", "human"].includes(cmd.controller) ? cmd.controller : "agent", force: !!cmd.force });
+      if (!out.character.ok) out.ok = false;
+    }
+    if (cmd.action) {
+      out.action = runAction(cmd.action, cmd.params);
+      if (!out.action.ok) out.ok = false;
+    }
+    let hold = Math.max(0, Math.min(60000, Number(cmd.hold) || 0));
+    if (cmd.intent === null) clearAgentIntent();
+    else if (cmd.intent !== undefined) setAgentIntent(cmd.intent, { by, ttlMs: hold > 0 ? hold : (cmd.ttlMs !== undefined ? cmd.ttlMs : 800), merge: !!cmd.merge });
+    const wait = Math.max(0, Math.min(10000, hold > 0 ? hold : (Number(cmd.wait) || 0)));
+    if (wait) await new Promise(resolve => setTimeout(resolve, wait));
+    if (cmd.stop) clearAgentIntent();
+    out.state = getAgentState();
+    return out;
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
 
   window.KeplerReach = {
     version: CONFIG.version,
     scale: WORLD_SCALE,
+    apiVersion: API_SCHEMA_VERSION,
+    // ---- Unified control + observation API (humans, scripts, LLM agents) ----
+    state: getAgentState,
+    input: {
+      set: setAgentIntent,
+      clear: clearAgentIntent,
+      current() { return { ...controlFrameIntent }; },
+      get agentIntent() { return { ...agentControl.intent }; },
+      get mode() { return getControlMode(); },
+      schema: INTENT_FIELDS
+    },
+    actions: { list: listActions, run: runAction, define: defineAction },
+    agent: {
+      describe: describeAgentApi,
+      state: getAgentState,
+      command: agentCommand,
+      drive(intent, ms) { return agentCommand({ intent, hold: ms === undefined ? 1000 : ms, stop: true }); },
+      guide: agentGuide
+    },
+    characters: {
+      list() { return Array.from(characterRoster.values()).map(c => ({ id: c.id, name: c.name, role: c.role, description: c.description, usernames: c.usernames.slice(), claim: characterClaims.has(c.id) ? characterSummary(c.id) : null })); },
+      get active() { return characterSummary(); },
+      claim: claimCharacter,
+      release: releaseCharacter,
+      register: registerCharacter,
+      bindUsername,
+      autoClaim: autoClaimCharacter
+    },
+    registerControllable,
     spacecraft:{get parked(){return shipParked;},brake:brakeShip,park(value){return setShipParked(value===undefined?true:!!value);}},
     physics:{
       model:"shared-body-mass-gravity-field-collision-boundary-framework",
