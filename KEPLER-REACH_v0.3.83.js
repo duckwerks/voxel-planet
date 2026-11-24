@@ -371,7 +371,7 @@
     return normal.dot(up)>.62;
   }
   function capsuleOverlapsSolid(position,up,object){
-    if(object&&object.userData&&object.userData.krWalkableSurface&&isStandingOnWalkableSurface(position,up,object))return false;
+    if(object&&object.userData&&(object.userData.krWalkableSurface||object.userData.krSolidCollider)&&isStandingOnWalkableSurface(position,up,object))return false;
     if(!object||!object.visible)return false;
     object.updateWorldMatrix(true,true);
     const bounds=new THREE.Box3().setFromObject(object);
