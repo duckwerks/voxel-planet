@@ -2860,7 +2860,7 @@
     water.name="KR_HAVEN_GLOBAL_OCEAN";water.userData.noCameraCollision=true;water.renderOrder=2;world.add(water);
     const lat=.02,lon=1.75,normal=new THREE.Vector3(Math.cos(lat)*Math.cos(lon),Math.sin(lat),Math.cos(lat)*Math.sin(lon)).normalize();
     const port=new THREE.Group();port.name="KR_L_ASTROLABE_OFFSHORE_SPACEPORT";port.position.copy(normal).multiplyScalar(CONFIG.planetRadius-.35);port.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),normal);
-    port.userData.walkBounds={minX:-34,maxX:34,minZ:-26,maxZ:26,floorY:3.15,launchX:36};world.add(port);havenPortRoot=port;
+    port.userData.walkBounds={minX:-34,maxX:34,minZ:-26,maxZ:26,floorY:3.15,launchX:-999};port.userData.krPhysicsProfile={id:"l-astrolabe",kind:"offshore-spaceport",massKg:8600000,densityKgM3:780,structuralStrength:8,material:"steel-composite"};world.add(port);havenPortRoot=port;
     const steel=new THREE.MeshStandardMaterial({color:0x526a76,metalness:.72,roughness:.38}),ivory=new THREE.MeshStandardMaterial({color:0xd7d0bd,metalness:.28,roughness:.58}),blue=new THREE.MeshStandardMaterial({color:0x247f91,metalness:.5,roughness:.32}),dark=new THREE.MeshStandardMaterial({color:0x263943,metalness:.48,roughness:.62}),glass=new THREE.MeshStandardMaterial({color:0x83d5df,metalness:.25,roughness:.16,transparent:true,opacity:.42}),amber=new THREE.MeshBasicMaterial({color:0xffc66e});
     const deck=new THREE.Mesh(new THREE.BoxGeometry(76,1.8,56),steel);deck.position.y=2.05;deck.userData.krSolidCollider=true;port.add(deck);
     const deckTop=new THREE.Mesh(new THREE.BoxGeometry(73,.12,53),ivory);deckTop.position.y=3;port.add(deckTop);
@@ -2894,13 +2894,13 @@
     const consoleMesh=new THREE.Mesh(new THREE.BoxGeometry(3.5,1.5,2.2),dark);consoleMesh.position.set(0,2.15,-8.2);boat.add(consoleMesh);
     const wheel=new THREE.Mesh(new THREE.TorusGeometry(.62,.075,8,24),amber);wheel.position.set(0,3.05,-8.9);wheel.rotation.x=.45;boat.add(wheel);
     const windshield=new THREE.Mesh(new THREE.BoxGeometry(5.8,1.3,.12),glass);windshield.position.set(0,3.25,-10);boat.add(windshield);
-    boat.userData.walkBounds={minX:-3,maxX:3,minZ:-10.5,maxZ:10.5,floorY:1.67,launchX:99};
+    boat.userData.walkBounds={minX:-3,maxX:3,minZ:-10.5,maxZ:10.5,floorY:1.67,launchX:-999};boat.userData.krPhysicsProfile={id:"haven-passenger-launch",kind:"boat",massKg:14500,densityKgM3:680,structuralStrength:3.5,material:"aluminium-composite"};
     const R=CONFIG.planetRadius-.35;boat.position.set(0,Math.sqrt(R*R-22*22)-R,-22);port.add(boat);maritimeBoat=boat;
     const ski=new THREE.Group();ski.name="KR_HAVEN_PERSONAL_WATERCRAFT";
     const sk=new THREE.Mesh(new THREE.CapsuleGeometry(.72,3.2,5,10),new THREE.MeshStandardMaterial({color:0xe7a64d,metalness:.35,roughness:.35}));sk.rotation.x=Math.PI/2;sk.position.y=.45;ski.add(sk);
     const ss=new THREE.Mesh(new THREE.BoxGeometry(1.05,.48,1.8),dark);ss.position.set(0,1.05,.15);ski.add(ss);
     const bars=new THREE.Mesh(new THREE.TorusGeometry(.48,.07,7,18),steel);bars.position.set(0,1.45,-1);bars.rotation.x=.6;ski.add(bars);
-    ski.position.set(16,Math.sqrt(R*R-16*16-8*8)-R,8);port.add(ski);maritimeJetski=ski;
+    ski.position.set(16,Math.sqrt(R*R-16*16-8*8)-R,8);ski.userData.krPhysicsProfile={id:"haven-personal-watercraft",kind:"personal-watercraft",massKg:420,densityKgM3:720,structuralStrength:1.8,material:"fibreglass-composite"};port.add(ski);maritimeJetski=ski;
     return port;
   }
   function updateMaritimeVehicle(delta){
@@ -2910,7 +2910,7 @@
     const up=new THREE.Vector3(x,Math.sqrt(Math.max(1,R*R-x*x-z*z)),z).normalize(),yawQ=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),maritimeHeading);
     vehicle.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),up).multiply(yawQ);const forward=new THREE.Vector3(0,0,-1).applyQuaternion(vehicle.quaternion).projectOnPlane(up).normalize();
     const nx=x+forward.x*speed*dt,nz=z+forward.z*speed*dt;if(nx*nx+nz*nz<65*65){vehicle.position.set(nx,Math.sqrt(Math.max(1,R*R-nx*nx-nz*nz))-R,nz);const nu=new THREE.Vector3(nx,R+vehicle.position.y,nz).normalize();vehicle.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),nu).multiply(yawQ);}
-    if(avatarLocal&&playerAvatar){vehicle.updateWorldMatrix(true,false);playerAvatar.position.copy(vehicle.localToWorld(avatarLocal));}
+    if(avatarLocal&&playerAvatar){vehicle.updateWorldMatrix(true,false);playerAvatar.position.copy(vehicle.localToWorld(avatarLocal));const q=vehicle.getWorldQuaternion(new THREE.Quaternion());playerUp.set(0,1,0).applyQuaternion(q).normalize();playerHeading.set(0,0,-1).applyQuaternion(q).normalize();orientAvatar();}
     const wp=vehicle.getWorldPosition(new THREE.Vector3()),wq=vehicle.getWorldQuaternion(new THREE.Quaternion()),wu=new THREE.Vector3(0,1,0).applyQuaternion(wq).normalize(),wf=new THREE.Vector3(0,0,-1).applyQuaternion(wq).normalize();
     camera.up.copy(wu);const eye=wp.clone().addScaledVector(wu,maritimeDrivingType==="jetski"?2.5:7).addScaledVector(wf,-(maritimeDrivingType==="jetski"?6:15));camera.position.lerp(eye,1-Math.pow(.00008,dt));camera.lookAt(wp.clone().addScaledVector(wu,2));
   }
