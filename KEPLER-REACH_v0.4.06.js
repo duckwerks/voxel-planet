@@ -10,7 +10,15 @@
   // Renderer: Three.js r160 / WebGL
   //
   // FEATURES
-  // - v0.4.06: Kinetic Field transports attitude through the complete rotating directional-gravity frame; flight position remains uncarried by station roots
+  // - v0.4.06: Last Stop home-dock landing beacon (landing assist, disembark and re-board now work at the home station)
+  // - v0.4.06: boarding a ship that was left parked in place launches from where it sits (no more teleport to the last pad)
+  // - v0.4.06: agent API: turn +1 now means RIGHT in Kinetic Field; forward/strafe drive the precision translation controls
+  // - v0.4.06: agent API: state() adds destinations, events (recent HUD messages), structure, kineticField gate and control owner
+  // - v0.4.06: controller ownership: agent/script claims lock the human's movement input (auto hand-back after 20 s of agent silence); characters.handoff()/reclaim()
+  // - v0.4.06: HUD status messages are de-duplicated (no per-frame console spam) and kept in a bounded event log
+  // - v0.4.06: a single frame fault no longer stops the render loop; five faults inside three seconds do
+  // - v0.4.06: removed the invalid flatShading flag on the sun's MeshBasicMaterial (console warning at startup)
+  // - v0.4.05: Kinetic Field attitude follows changing local gravity frames; station launch gates are location-scoped
   // - Procedural starfield
   // - Procedural low-poly planet
   // - Dynamic vehicle occupants and cargo slots
@@ -72,7 +80,7 @@
   }
 
   const CONFIG = {
-    version: "0.4.04",
+    version: "0.4.06",
     seed: 847291,
     threeVersion: "0.160.0",
 
@@ -160,69 +168,18 @@
         const b=field.bounds;
         if(local.x<b.minX||local.x>b.maxX||local.y<b.minY||local.y>b.maxY||local.z<b.minZ||local.z>b.maxZ)continue;
         const up=new THREE.Vector3(0,1,0).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion())).normalize();
-        const c={id:field.id,kind:"directional",root,worldQuaternion:root.getWorldQuaternion(new THREE.Quaternion()),magnitude:field.magnitude,up,priority:field.priority||0,altitude:0};
+        const c={id:field.id,kind:"directional",magnitude:field.magnitude,up,priority:field.priority||0,altitude:0};
         if(!best||c.priority>best.priority)best=c;
       }else if(field.shape==="radial"){
         const distance=Math.max(.001,local.length()),altitude=distance-field.radius;
         if(altitude < -2 || altitude > field.influenceRadius)continue;
         const up=local.clone().normalize().applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion())).normalize();
         const magnitude=field.massKg>0?PHYSICS_G*field.massKg/Math.pow(Math.max(distance,field.radius),2):field.surfaceGravity*Math.pow(field.radius/Math.max(distance,field.radius),2);
-        const c={id:field.id,kind:"radial",root,worldQuaternion:root.getWorldQuaternion(new THREE.Quaternion()),magnitude,up,priority:field.priority||0,altitude};
+        const c={id:field.id,kind:"radial",magnitude,up,priority:field.priority||0,altitude};
         if(!best||c.priority>best.priority||(c.priority===best.priority&&c.altitude<best.altitude))best=c;
       }
     }
     return best;
-  }
-  function beginKineticFlightFrame(gravityField,gravityUp){
-    const root=gravityField&&gravityField.kind==="directional"?gravityField.root:null;
-    let worldQuaternion=null;
-    if(root){
-      root.updateWorldMatrix(true,false);
-      worldQuaternion=root.getWorldQuaternion(new THREE.Quaternion()).normalize();
-    }
-    kineticFlightFrame={
-      id:gravityField?gravityField.id:null,
-      kind:gravityField?gravityField.kind:"radial",
-      root,
-      worldQuaternion,
-      up:gravityUp.clone().normalize()
-    };
-  }
-  function transportKineticFlightAttitude(gravityField,gravityUp){
-    const root=gravityField&&gravityField.kind==="directional"?gravityField.root:null;
-    let worldQuaternion=null;
-    if(root){
-      root.updateWorldMatrix(true,false);
-      worldQuaternion=root.getWorldQuaternion(new THREE.Quaternion()).normalize();
-    }
-    if(!kineticFlightFrame){
-      beginKineticFlightFrame(gravityField,gravityUp);
-      return;
-    }
-    let frameDelta=null;
-    // While remaining inside one directional field, transport the complete
-    // frame orientation. This includes yaw/twist about the gravity axis, which
-    // an up-vector-only correction cannot detect (notably Solar Commons).
-    if(root&&kineticFlightFrame.root===root&&kineticFlightFrame.worldQuaternion&&worldQuaternion){
-      frameDelta=worldQuaternion.clone().multiply(kineticFlightFrame.worldQuaternion.clone().invert()).normalize();
-    }else{
-      // On entry/exit or between distinct fields, preserve world heading and
-      // rotate only as much as needed to align the new gravity-up direction.
-      const previousUp=kineticFlightFrame.up;
-      if(previousUp&&previousUp.lengthSq()>1e-8&&previousUp.dot(gravityUp)<0.999999){
-        frameDelta=new THREE.Quaternion().setFromUnitVectors(previousUp,gravityUp).normalize();
-      }
-    }
-    if(frameDelta&&playerFlightForward){
-      playerFlightForward.applyQuaternion(frameDelta).normalize();
-    }
-    kineticFlightFrame={
-      id:gravityField?gravityField.id:null,
-      kind:gravityField?gravityField.kind:"radial",
-      root,
-      worldQuaternion,
-      up:gravityUp.clone().normalize()
-    };
   }
   function registerSphericalBoundary(spec){
     if(!spec||!spec.id||!spec.root||!spec.center||!(spec.radius>0))throw new Error("Spherical boundary requires id, root, center and positive radius.");
@@ -346,6 +303,7 @@
   let moonWorld = null;
   let moonLandingMarker = null;
   let havenLandingMarker = null;
+  let lastStopLandingMarker = null;
   let activeLandingBody = "haven";
   let activeSurfaceBody = "haven";
   let landingMarker = null;
@@ -766,9 +724,6 @@
   let playerHeading = null;
   let playerFlightForward = null;
   let playerUp = null;
-  // Kinetic Field keeps world-space motion independent while tracking the full
-  // orientation of a directional gravity frame (including rotation about up).
-  let kineticFlightFrame = null;
   let playerRight = null;
   let playerMove = null;
   let playerCameraTarget = null;
@@ -953,7 +908,7 @@
       letter-spacing:3px;
     ">KEPLER REACH</div>
 
-    <div>PROCEDURAL UNIVERSE // BUILD 0.3.97</div>
+    <div>PROCEDURAL UNIVERSE // BUILD 0.4.06</div>
 
     <div id="kr-location">LOCATION: INITIALIZING</div>
     <div id="kr-speed">VELOCITY: 0</div>
@@ -1170,8 +1125,24 @@
   root.appendChild(statusPanel);
 
   let statusTimer = 0;
+  // v0.4.06: bounded event log + de-duplication. HUD messages that repeat every frame
+  // (e.g. "WALK OUT TO THE SPACE DOCK TO LAUNCH") are logged once and no longer spam the console.
+  const statusLog = [];
+  let lastStatusMessage = "", lastStatusAt = 0;
+  const frameFaults = [];
+  function landingBodyName(body) {
+    return body === "port" ? "L'ASTROLABE" : body === "moon" ? "LUNA" : body === "solar" ? "SOLAR COMMONS" : body === "last" ? "THE LAST STOP" : "HAVEN";
+  }
   function setStatus(message, error = false) {
-    statusPanel.textContent = message;
+    const nowMs = performance.now();
+    const repeat = message === lastStatusMessage && nowMs - lastStatusAt < 2500;
+    lastStatusAt = nowMs;
+    if (!repeat) {
+      lastStatusMessage = message;
+      statusLog.push({ t: Math.round(nowMs / 100) / 10, message: String(message), error: !!error });
+      if (statusLog.length > 40) statusLog.shift();
+    }
+    if (statusPanel.textContent !== message) statusPanel.textContent = message;
     statusPanel.style.color = error ? "#ff7777" : "#a9c5d9";
     statusPanel.style.display = "block";
     if (statusTimer) clearTimeout(statusTimer);
@@ -1179,8 +1150,8 @@
       statusTimer = setTimeout(() => { statusPanel.style.display = "none"; }, 4200);
     }
     const hudStatus = document.getElementById("kr-status");
-    if (hudStatus) hudStatus.textContent = message;
-    console[error ? "error" : "log"]("[Kepler Reach]", message);
+    if (hudStatus && hudStatus.textContent !== message) hudStatus.textContent = message;
+    if (!repeat) console[error ? "error" : "log"]("[Kepler Reach]", message);
   }
 
   // ============================================================
@@ -4167,12 +4138,25 @@
   // CENTRAL STAR
   // ============================================================
 
+  // v0.4.06: home-dock landing beacon so landing assist, disembark and re-board work at the Last Stop.
+  function createStationLandingMarker(parent, position, name) {
+    const g = new THREE.Group();
+    g.name = name; g.position.copy(position);
+    const amber = new THREE.MeshBasicMaterial({ color: 0xe8b25a }), cyan = new THREE.MeshBasicMaterial({ color: 0x8fd9e7 });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(10, 0.34, 8, 48), amber); ring.rotation.x = Math.PI / 2; g.add(ring);
+    const inner = new THREE.Mesh(new THREE.TorusGeometry(6, 0.18, 6, 40), cyan); inner.rotation.x = Math.PI / 2; g.add(inner);
+    const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 18, 8), amber); beacon.position.y = 10; g.add(beacon);
+    const tip = new THREE.Mesh(new THREE.OctahedronGeometry(1.1, 0), new THREE.MeshBasicMaterial({ color: 0xffe0a6 })); tip.position.y = 19; g.add(tip);
+    g.traverse(o => { o.userData.noCameraCollision = true; });
+    parent.add(g);
+    return g;
+  }
+
   function createSun() {
     const sun = new THREE.Mesh(
       new THREE.SphereGeometry(32, 24, 16),
       new THREE.MeshBasicMaterial({
-        color: 0xffd99a,
-        flatShading: true
+        color: 0xffd99a
       })
     );
 
@@ -4611,6 +4595,26 @@
     }
 
 
+    // v0.4.06: Last Stop home-dock touchdown transitions into the station walking frame.
+    if(activeLandingBody==="last"&&lastStopDinerRef){
+      stationInteriorMode=true;stationWalkRoot=lastStopDinerRef;activeSurfaceBody="haven";
+      if(playerAvatar.parent!==scene)scene.attach(playerAvatar);
+      playerSeatedInShip=false;
+      playerAvatar.position.copy(lastStopDinerRef.localToWorld(new THREE.Vector3(82,5.9,12)));
+      const lsQ=lastStopDinerRef.getWorldQuaternion(new THREE.Quaternion());
+      playerUp.set(0,1,0).applyQuaternion(lsQ).normalize();
+      playerHeading.set(0,0,-1).applyQuaternion(lsQ).normalize();playerFlightForward.copy(playerHeading);
+      playerGrounded=true;playerVerticalSpeed=0;playerAirHeight=0;recenterCamera();cameraMode="third";
+      if(cameraButton){cameraButton.style.display="block";cameraButton.textContent="VIEW: THIRD PERSON";}
+      if(lookPad)lookPad.style.display="grid";if(mobile)mobile.style.display="block";
+      orientAvatar();onFoot=true;avatarIsWalking=false;playerAvatar.visible=true;ship.visible=true;
+      explorerEquipment.thrusting=false;playerInSpaceFlight=false;if(playerFlightVelocity)playerFlightVelocity.set(0,0,0);
+      clearKeys();createPracticeTargets();
+      if(disembarkButton)disembarkButton.style.display="none";if(boardShipButton)boardShipButton.style.display="block";
+      if(landingButton)landingButton.style.display="none";if(navLabel)navLabel.style.display="none";if(approachLine)approachLine.visible=false;
+      setStatus("ON FOOT // THE LAST STOP SPACE DOCK");showModeHint("THE LAST STOP  //  SPACE DOCK");return;
+    }
+
     // Solar Commons touchdown transitions directly into the station walking frame.
     if(activeLandingBody==="solar"&&solarHabitatStation){
       stationInteriorMode=true;stationWalkRoot=solarHabitatStation;activeSurfaceBody="haven";
@@ -4683,7 +4687,7 @@
     if (!onFoot || !playerAvatar || !ship) return;
 
     const padWorld = landingMarker.getWorldPosition(new THREE.Vector3());
-    const padUp = new THREE.Vector3(0, 1, 0)
+    let padUp = new THREE.Vector3(0, 1, 0)
       .applyQuaternion(landingMarker.getWorldQuaternion(new THREE.Quaternion()))
       .normalize();
 
@@ -4694,6 +4698,10 @@
       setStatus("SHIP OUT OF REACH // WALK BACK TO THE LANDING PAD");
       return;
     }
+
+    // v0.4.06: a ship that was left parked in place (the home dock at game start, or after
+    // a manual stop) launches from where it sits instead of teleporting to the last landing pad.
+    const launchInPlace = landingState !== "landed" && distanceToShip <= 36;
 
     // Boarding is also the launch transition. Leaving landingState as
     // "landed" keeps updateFlight() in its stationary touchdown branch.
@@ -4712,8 +4720,13 @@
     playerAirHeight = 0;
     buggyMode = false;
     landingState = "idle";
-    ship.position.copy(landingDestination).addScaledVector(padUp, 10);
-    ship.quaternion.copy(landingQuaternion);
+    if (launchInPlace) {
+      padUp = new THREE.Vector3(0, 1, 0).applyQuaternion(ship.getWorldQuaternion(new THREE.Quaternion())).normalize();
+      ship.position.addScaledVector(padUp, 4);
+    } else {
+      ship.position.copy(landingDestination).addScaledVector(padUp, 10);
+      ship.quaternion.copy(landingQuaternion);
+    }
     velocity.x = velocity.y = velocity.z = 0;
     clearKeys();
 
@@ -4741,7 +4754,7 @@
     camera.position.copy(ship.position).addScaledVector(padUp, 12);
     lookTarget.copy(ship.position).addScaledVector(padUp, 4);
     camera.lookAt(lookTarget);
-    setStatus("BACK ABOARD // "+(activeLandingBody==="solar"?"SOLAR COMMONS":activeSurfaceBody==="moon"?"LUNA":"HAVEN")+" LANDING SITE");
+    setStatus((launchInPlace?"ABOARD // LAUNCHED FROM PARKED POSITION":"BACK ABOARD // "+(activeLandingBody==="last"?"THE LAST STOP":activeLandingBody==="solar"?"SOLAR COMMONS":activeSurfaceBody==="moon"?"LUNA":"HAVEN")+" LANDING SITE"));
     showModeHint("SPACECRAFT  //  FLIGHT CONTROLS");
   }
 
@@ -4935,9 +4948,17 @@
     const luna=getCelestialBodyState(moonWorld,CONFIG.moonRadius,moonTerrainProfile,playerAvatar.position,BODY_PHYSICS.moon.gravity);
     const nearestBody=haven.altitude<=luna.altitude?"haven":"moon",nearest=nearestBody==="haven"?haven:luna;
     const gravityField=queryGravityField(playerAvatar.position);
+    const stationDeck=!!(gravityField&&gravityField.kind==="directional");
+    const previousGravityUp=playerUp.clone().normalize();
     const gravityUp=gravityField?gravityField.up.clone():nearest.up.clone();
     const gravity=gravityField?gravityField.magnitude:nearest.gravity;
-    transportKineticFlightAttitude(gravityField,gravityUp);
+    // Carry the flight attitude into the current gravity frame. Without this
+    // transport, the forward vector retains the orientation of the surface
+    // where Kinetic Field was last activated, even after entering another field.
+    if(previousGravityUp.lengthSq()>1e-8&&previousGravityUp.dot(gravityUp)<0.999999){
+      const gravityFrameChange=new THREE.Quaternion().setFromUnitVectors(previousGravityUp,gravityUp);
+      playerFlightForward.applyQuaternion(gravityFrameChange).normalize();
+    }
     playerUp.copy(gravityUp);
     const yawInput=THREE.MathUtils.clamp(touchFlightYaw+(keys.a?1:0)-(keys.d?1:0),-1,1);
     const pitchInput=THREE.MathUtils.clamp(touchFlightPitch+(keys.w?1:0)-(keys.s?1:0),-1,1);
@@ -5018,7 +5039,7 @@
       if(playerHeading.lengthSq()<1e-8)playerHeading.set(0,0,-1);else playerHeading.normalize();
       playerGrounded=true;playerVerticalSpeed=0;playerAirHeight=0;playerFlightVelocity.set(0,0,0);
       if(landingSupport)rememberPlayerSupport(landingSupport);else clearPlayerSupportFrame();
-      playerInSpaceFlight=false;kineticFlightFrame=null;keys.space=false;touchFlightThrust=touchFlightStrafe=0;
+      playerInSpaceFlight=false;keys.space=false;touchFlightThrust=touchFlightStrafe=0;
       touchFlightThrust=touchFlightStrafe=touchFlightYaw=touchFlightPitch=0;
       setStatus("FLIGHT LANDING // "+landingName);updateEquipmentHUD();
     }else playerGrounded=false;
@@ -5083,7 +5104,6 @@
       playerInSpaceFlight=true;playerGrounded=false;
       playerFlightForward.copy(playerHeading).addScaledVector(playerUp,.38).normalize();
       playerFlightVelocity.set(0,0,0);
-      beginKineticFlightFrame(queryGravityField(playerAvatar.position),playerUp);
       touchFlightYaw=touchFlightPitch=touchFlightThrust=touchFlightStrafe=0;
       setStatus("KINETIC FIELD // ARCADE CONTROL");
     }
@@ -5290,12 +5310,12 @@
       ship.quaternion.copy(landingQuaternion);
       landingState = "landed";
       if (landingButton) {
-        landingButton.textContent = "LANDED ON "+(activeLandingBody==="port"?"L'ASTROLABE":activeLandingBody==="moon"?"LUNA":activeLandingBody==="solar"?"SOLAR COMMONS":"HAVEN");
+        landingButton.textContent = "LANDED ON "+landingBodyName(activeLandingBody);
         landingButton.disabled = true;
         landingButton.style.opacity = "1";
       }
       if (disembarkButton) disembarkButton.style.display = "block";
-      setStatus("TOUCHDOWN CONFIRMED // "+(activeLandingBody==="port"?"L'ASTROLABE":activeLandingBody==="moon"?"LUNA":activeLandingBody==="solar"?"SOLAR COMMONS":"HAVEN"));
+      setStatus("TOUCHDOWN CONFIRMED // "+landingBodyName(activeLandingBody));
     }
     return true;
   }
@@ -5512,13 +5532,11 @@
     if (!landingMarker || !landingTarget || !ship || !camera) return;
 
     if(landingState==="idle"&&havenLandingMarker&&moonLandingMarker&&moonWorld){
-      const hp=havenLandingMarker.getWorldPosition(new THREE.Vector3()),mp=moonLandingMarker.getWorldPosition(new THREE.Vector3());
-      const sp=solarCommonsLandingMarker?solarCommonsLandingMarker.getWorldPosition(new THREE.Vector3()):null,pp=havenPortLandingMarker?havenPortLandingMarker.getWorldPosition(new THREE.Vector3()):null;
-      const dh=ship.position.distanceTo(hp),dm=ship.position.distanceTo(mp),ds=sp?ship.position.distanceTo(sp):Infinity,dp=pp?ship.position.distanceTo(pp):Infinity;
-      if(dp<dh&&dp<dm&&dp<ds){landingMarker=havenPortLandingMarker;activeLandingBody="port";}
-      else if(ds<dh&&ds<dm){landingMarker=solarCommonsLandingMarker;activeLandingBody="solar";}
-      else if(dm<dh){landingMarker=moonLandingMarker;activeLandingBody="moon";}
-      else{landingMarker=havenLandingMarker;activeLandingBody="haven";}
+      const beaconCandidates=[["haven",havenLandingMarker],["moon",moonLandingMarker],["solar",solarCommonsLandingMarker],["port",havenPortLandingMarker],["last",lastStopLandingMarker]];
+      let bestBody="haven",bestMarker=havenLandingMarker,bestDistance=Infinity;
+      const beaconPoint=new THREE.Vector3();
+      for(const [body,marker] of beaconCandidates){if(!marker)continue;const d=ship.position.distanceTo(marker.getWorldPosition(beaconPoint));if(d<bestDistance){bestDistance=d;bestBody=body;bestMarker=marker;}}
+      landingMarker=bestMarker;activeLandingBody=bestBody;
     }
     landingMarker.getWorldPosition(landingTarget);
 
@@ -5542,7 +5560,7 @@
       navLabel.style.display = "block";
       navLabel.style.left = Math.max(margin, Math.min(window.innerWidth - margin, x)) + "px";
       navLabel.style.top = Math.max(margin, Math.min(window.innerHeight - margin, y - 24)) + "px";
-      navLabel.textContent = activeLandingBody==="port"?"▼ L'ASTROLABE OFFSHORE SPACEPORT":activeLandingBody==="moon"?"▼ LUNA LANDING SITE":activeLandingBody==="solar"?"▼ SOLAR COMMONS DOCK":"▼ HAVEN LANDING SITE";
+      navLabel.textContent = activeLandingBody==="port"?"▼ L'ASTROLABE OFFSHORE SPACEPORT":activeLandingBody==="moon"?"▼ LUNA LANDING SITE":activeLandingBody==="solar"?"▼ SOLAR COMMONS DOCK":activeLandingBody==="last"?"▼ THE LAST STOP SPACE DOCK":"▼ HAVEN LANDING SITE";
     } else {
       navLabel.style.display = "none";
     }
@@ -5555,25 +5573,25 @@
       if (landingState === "approach") {
         landingButton.textContent = "ABORT LANDING";
       } else if (landingState === "landed") {
-        landingButton.textContent = "LANDED ON "+(activeLandingBody==="moon"?"LUNA":activeLandingBody==="solar"?"SOLAR COMMONS":"HAVEN");
+        landingButton.textContent = "LANDED ON "+landingBodyName(activeLandingBody);
       } else {
-        landingButton.textContent = ready ? (activeLandingBody==="port"?"LAND AT L'ASTROLABE":activeLandingBody==="moon"?"LAND ON LUNA":activeLandingBody==="solar"?"DOCK AT SOLAR COMMONS":"LAND ON HAVEN") : "LANDING ASSIST";
+        landingButton.textContent = ready ? (activeLandingBody==="port"?"LAND AT L'ASTROLABE":activeLandingBody==="moon"?"LAND ON LUNA":activeLandingBody==="solar"?"DOCK AT SOLAR COMMONS":activeLandingBody==="last"?"DOCK AT THE LAST STOP":"LAND ON HAVEN") : "LANDING ASSIST";
       }
     }
     const targetText = document.getElementById("kr-target");
     const phaseText = document.getElementById("kr-phase");
-    const altitude=activeLandingBody==="solar"&&solarHabitatStation?ship.position.distanceTo(solarHabitatStation.getWorldPosition(new THREE.Vector3())):activeLandingBody==="port"&&havenPortLandingMarker?ship.position.distanceTo(landingTarget):activeLandingBody==="moon"&&moonWorld?ship.position.distanceTo(moonWorld.getWorldPosition(new THREE.Vector3()))-CONFIG.moonRadius:ship.position.distanceTo(planetCenter)-CONFIG.planetRadius;
+    const altitude=activeLandingBody==="last"?ship.position.distanceTo(landingTarget):activeLandingBody==="solar"&&solarHabitatStation?ship.position.distanceTo(solarHabitatStation.getWorldPosition(new THREE.Vector3())):activeLandingBody==="port"&&havenPortLandingMarker?ship.position.distanceTo(landingTarget):activeLandingBody==="moon"&&moonWorld?ship.position.distanceTo(moonWorld.getWorldPosition(new THREE.Vector3()))-CONFIG.moonRadius:ship.position.distanceTo(planetCenter)-CONFIG.planetRadius;
 
     if (targetText) {
       targetText.textContent = "LANDING SITE: " + targetDistance.toFixed(0) + " UNITS";
     }
 
     let phase = "DEEP SPACE";
-    if (altitude < 250) phase = activeLandingBody==="moon"?"LUNA ORBIT":activeLandingBody==="solar"?"SOLAR COMMONS APPROACH":"HAVEN ORBIT";
+    if (altitude < 250) phase = activeLandingBody==="moon"?"LUNA ORBIT":activeLandingBody==="solar"?"SOLAR COMMONS APPROACH":activeLandingBody==="last"?"LAST STOP APPROACH":"HAVEN ORBIT";
     if (targetDistance < 180) phase = "APPROACH CORRIDOR";
     if (targetDistance < 55) phase = "LANDING RANGE";
-    if (landingState === "approach") phase = activeLandingBody==="solar"?"AUTOMATED DOCKING":"AUTOMATED DESCENT";
-    if (landingState === "landed") phase = "LANDED // "+(activeLandingBody==="solar"?"SOLAR COMMONS DOCK":"PAD SECURE");
+    if (landingState === "approach") phase = (activeLandingBody==="solar"||activeLandingBody==="last")?"AUTOMATED DOCKING":"AUTOMATED DESCENT";
+    if (landingState === "landed") phase = "LANDED // "+(activeLandingBody==="solar"?"SOLAR COMMONS DOCK":activeLandingBody==="last"?"LAST STOP DOCK":"PAD SECURE");
     if (onFoot) phase = "ON FOOT // "+(activeSurfaceBody==="moon"?"LUNA":"HAVEN");
 
     if (phaseText) {
@@ -5744,14 +5762,14 @@
 
     if (altitude < 35) {
       location.textContent =
-        activeLandingBody==="moon"?"LOCATION: LUNA APPROACH":"LOCATION: HAVEN APPROACH";
+        activeLandingBody==="moon"?"LOCATION: LUNA APPROACH":activeLandingBody==="last"?"LOCATION: LAST STOP APPROACH":"LOCATION: HAVEN APPROACH";
 
       status.textContent =
         "DESTINATION IN RANGE";
 
     } else if (altitude < 250) {
       location.textContent =
-        activeLandingBody==="moon"?"LOCATION: LUNA ORBIT":"LOCATION: HAVEN ORBIT";
+        activeLandingBody==="moon"?"LOCATION: LUNA ORBIT":activeLandingBody==="last"?"LOCATION: LAST STOP ORBIT":"LOCATION: HAVEN ORBIT";
 
       status.textContent =
         "APPROACHING VIDEO WORLD";
@@ -5923,6 +5941,7 @@
       orientAvatar();
       ship.position.copy(stationGroup.localToWorld(new THREE.Vector3(82,7.3,0)));
       ship.rotation.y=Math.PI/2;
+      lastStopLandingMarker=createStationLandingMarker(stationGroup,new THREE.Vector3(82,5.95,0),'KR_LAST_STOP_LANDING_MARKER');
       createModelWorkshop();
       registerCorePhysics();
       rebuildSolidColliderCache();
@@ -6022,9 +6041,19 @@
           updateHUD();
           renderer.render(scene, camera);
         } catch (error) {
-          cancelAnimationFrame(animationFrame);
-          setStatus("RENDER LOOP ERROR: " + (error && error.message ? error.message : String(error)), true);
-          console.error("[Kepler Reach] Render loop stopped:", error);
+          // v0.4.06: one transient fault no longer ends the session; a burst of faults does.
+          const faultNow = performance.now();
+          while (frameFaults.length && faultNow - frameFaults[0] > 3000) frameFaults.shift();
+          frameFaults.push(faultNow);
+          const faultMessage = error && error.message ? error.message : String(error);
+          console.error("[Kepler Reach] Frame fault:", error);
+          if (frameFaults.length >= 5) {
+            cancelAnimationFrame(animationFrame);
+            setStatus("RENDER LOOP ERROR: " + faultMessage, true);
+            console.error("[Kepler Reach] Render loop stopped after repeated faults.");
+          } else {
+            setStatus("FRAME FAULT // RECOVERING: " + faultMessage);
+          }
         }
       }
 
@@ -6228,7 +6257,7 @@
   const INTENT_ALIASES = Object.freeze({ move: "forward", thrust: "forward", throttle: "forward", steer: "turn", yaw: "turn", jump: "boost" });
   const MODE_HELP = Object.freeze({
     walk: "On foot. forward walks, turn rotates, boost launches the jetpack, look orbits the camera.",
-    jetpack: "Kinetic-field flight. boost thrusts along your nose, turn yaws, pitch tilts. Release boost to descend.",
+    jetpack: "Kinetic-field flight. boost thrusts along your nose at full speed; turn (+1 = right) yaws, pitch tilts the nose; forward/strafe give slow precision translation (and hover). Release everything to descend.",
     ship: "Spacecraft. forward thrusts along the nose, strafe slides sideways, turn yaws, pitch tilts.",
     buggy: "Luna utility rover. forward is throttle, turn steers.",
     boat: "Passenger launch at the helm. forward is throttle, turn steers.",
@@ -6279,6 +6308,7 @@
     // watchdog: if an agent goes quiet, its character stops instead of running away.
     agentControl.expires = ttl === 0 ? Infinity : performance.now() + ttl;
     agentControl.active = true;
+    lastAgentInputAt = performance.now();
     agentControl.by = String(opts.by || agentControl.by || "agent").slice(0, 60);
     return { ...intent };
   }
@@ -6307,10 +6337,26 @@
   // Called at the start of every frame. Merges agent intent into the same
   // inputs the keyboard and touch pads write, so ONE movement implementation
   // serves everybody. Restored after the frame by restoreAgentControls().
+  // Controller ownership (roadmap 9.5): when the local character is claimed by an agent or script,
+  // the human's movement input is locked out while that controller is alive. If the agent goes
+  // silent for HUMAN_LOCK_GRACE_MS the human is handed control back automatically.
+  const HUMAN_LOCK_GRACE_MS = 20000;
+  let lastAgentInputAt = 0;
+  function localControllerType() {
+    const claim = characterClaims.get(localCharacterId);
+    return claim ? claim.controller : "human";
+  }
+  function humanInputLocked() {
+    if (localControllerType() === "human") return false;
+    return performance.now() - lastAgentInputAt < HUMAN_LOCK_GRACE_MS;
+  }
+
   function applyAgentControls() {
     agentControl.saved = null;
     if (agentControl.active && performance.now() > agentControl.expires) clearAgentIntent();
-    const human = humanIntent(), a = agentControl.intent;
+    const locked = humanInputLocked();
+    const idle = { forward: 0, turn: 0, strafe: 0, pitch: 0, lookX: 0, lookY: 0, boost: false };
+    const human = locked ? idle : humanIntent(), a = agentControl.intent;
     const merged = {
       forward: clampUnit(human.forward + (agentControl.active ? a.forward : 0)),
       turn: clampUnit(human.turn + (agentControl.active ? a.turn : 0)),
@@ -6321,18 +6367,19 @@
       boost: human.boost || (agentControl.active && a.boost)
     };
     controlFrameIntent = merged;
-    const capture = activeControllable() && activeControllable().captureInput;
-    if (!agentControl.active && !capture) return;
+    const custom = activeControllable(), capture = custom && custom.captureInput;
+    if (!agentControl.active && !capture && !locked) return;
     const saved = { keys: {}, yaw: touchFlightYaw, pitch: touchFlightPitch, thrust: touchFlightThrust, strafe: touchFlightStrafe, lookX: lookInputX, lookY: lookInputY };
     for (const k of AGENT_KEYS) saved.keys[k] = keys[k];
     agentControl.saved = saved;
-    if (capture) {
-      // A registered vehicle owns the controls this frame: built-in movement sees neutral input.
+    if (capture || locked) {
+      // A registered vehicle (or an agent/script owner) holds the controls: the human's inputs are neutral this frame.
       for (const k of AGENT_KEYS) keys[k] = false;
       touchFlightYaw = touchFlightPitch = touchFlightThrust = touchFlightStrafe = 0;
       lookInputX = lookInputY = 0;
-      return;
     }
+    if (capture) return;
+    if (!agentControl.active) return;
     const mode = getControlMode(), dz = 0.25;
     if (mode === "ship") {
       touchFlightYaw = clampUnit(touchFlightYaw - a.turn);
@@ -6340,8 +6387,13 @@
       touchFlightThrust = clampUnit(touchFlightThrust + a.forward);
       touchFlightStrafe = clampUnit(touchFlightStrafe + a.strafe);
     } else if (mode === "jetpack") {
-      touchFlightYaw = clampUnit(touchFlightYaw - a.turn);
+      // v0.4.06: Kinetic Field's yaw input is mirrored relative to walking and the ship
+      // (its A key turns right), so +turn (right) maps to +yaw here. forward/strafe drive the
+      // precision translation controls added in v0.4.02.
+      touchFlightYaw = clampUnit(touchFlightYaw + a.turn);
       touchFlightPitch = clampUnit(touchFlightPitch + a.pitch);
+      touchFlightThrust = clampUnit(touchFlightThrust + a.forward);
+      touchFlightStrafe = clampUnit(touchFlightStrafe + a.strafe);
       if (a.boost) keys.space = true;
     } else {
       if (a.forward > dz) keys.w = true; else if (a.forward < -dz) keys.s = true;
@@ -6686,6 +6738,7 @@
     if (existing && existing.by !== by && !opts.force) return { ok: false, error: "ALREADY_CLAIMED", claimedBy: existing.by };
     if (localCharacterId !== id && localCharacterId !== "explorer") releaseCharacter(localCharacterId, true);
     characterClaims.set(id, { by, controller, since: Date.now() });
+    lastAgentInputAt = performance.now();
     localCharacterId = id;
     if (id !== "explorer") {
       characterHeld.add(id);
@@ -6696,6 +6749,24 @@
       setStatus("NOW PLAYING " + c.name.toUpperCase() + " // " + controller.toUpperCase() + " (" + by + ")");
     }
     return { ok: true, character: characterSummary(id) };
+  }
+
+  // Controller handoff (roadmap 9.5): identity and state stay; only who drives changes.
+  function handoffCharacter(controller, opts) {
+    opts = opts || {};
+    if (!["human", "agent", "script"].includes(controller)) return { ok: false, error: "UNKNOWN_CONTROLLER" };
+    const id = localCharacterId, existing = characterClaims.get(id);
+    const clientName = (window.CLIENT && window.CLIENT.name) ? String(window.CLIENT.name) : "local";
+    const by = String(opts.by || (existing && existing.by) || clientName).slice(0, 60);
+    characterClaims.set(id, { by, controller, since: Date.now() });
+    lastAgentInputAt = performance.now();
+    if (controller === "human") clearAgentIntent();
+    setStatus("CONTROL // " + characterSummary(id).name.toUpperCase() + " -> " + controller.toUpperCase() + " (" + by + ")");
+    return { ok: true, character: characterSummary(id), control: controlOwnerInfo() };
+  }
+  function controlOwnerInfo() {
+    const locked = humanInputLocked();
+    return { controller: localControllerType(), humanLocked: locked, graceMsLeft: locked ? Math.max(0, Math.round(HUMAN_LOCK_GRACE_MS - (performance.now() - lastAgentInputAt))) : 0 };
   }
 
   function bindUsername(username, id) {
@@ -6798,6 +6869,60 @@
     return out.slice(0, limit || 14);
   }
 
+  // ---- v0.4.06 observation additions -------------------------------------------------------
+  function bearingFor(frame, point) {
+    const right = frame.forward.clone().cross(frame.up);
+    if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+    right.normalize();
+    const v = new THREE.Vector3(point.x, point.y, point.z).sub(frame.pos);
+    const flat = v.clone().addScaledVector(frame.up, -v.dot(frame.up));
+    return { distanceM: roundTo(v.length(), 1), bearingDeg: roundTo(Math.atan2(flat.dot(right), flat.dot(frame.forward)) * 180 / Math.PI, 0) };
+  }
+  function destinationsList(frame) {
+    const out = [];
+    const add = (id, name, kind, obj, extra) => {
+      if (!obj) return;
+      try {
+        const p = obj.getWorldPosition(new THREE.Vector3());
+        out.push({ id, name, kind, positionM: vecJson(p), ...bearingFor(frame, p), ...(extra || {}) });
+      } catch (_) { /* ignore */ }
+    };
+    add("haven-landing-site", "Haven landing site", "planet-pad", havenLandingMarker, { beacon: true, ship: "landing_assist within 220 m", onFoot: "Kinetic Field descent onto the pad" });
+    add("luna-landing-site", "Luna landing site", "moon-pad", moonLandingMarker, { beacon: true, ship: "landing_assist within 220 m", onFoot: "Kinetic Field descent; low gravity makes a slow drift down, so point the nose down and boost" });
+    add("l-astrolabe", "L'Astrolabe offshore spaceport", "offshore-spaceport", havenPortLandingMarker, { beacon: true, ship: "landing_assist within 220 m", onFoot: "Kinetic Field descent onto the deck" });
+    add("quai-de-haven", "Quai de Haven shore dock", "shore-dock", havenShoreDockRoot, { beacon: false, ship: "no landing beacon", onFoot: "walk, boat, or Kinetic Field descent onto the quay" });
+    add("solar-commons-dock", "Solar Commons orbital dock", "station-dock", solarCommonsLandingMarker, { beacon: true, ship: "landing_assist within 220 m", onFoot: "Kinetic Field descent onto the apron" });
+    add("last-stop-dock", "The Last Stop space dock", "station-dock", lastStopLandingMarker, { beacon: true, ship: "landing_assist within 220 m", onFoot: "Kinetic Field descent onto the apron (x >= 38 in the station frame to launch)" });
+    out.sort((a, b) => a.distanceM - b.distanceM);
+    return out;
+  }
+  function describeStructure(pos) {
+    const roots = [["l-astrolabe", havenPortRoot], ["quai-de-haven", havenShoreDockRoot], ["solar-commons", solarHabitatStation], ["last-stop", lastStopDinerRef]];
+    for (const [id, root] of roots) {
+      if (!root) continue;
+      const b = (root.userData && root.userData.walkBounds) || (id === "last-stop" ? { minX: -41, maxX: 154, minZ: -47, maxZ: 47, floorY: 5.9 } : null);
+      if (!b) continue;
+      const local = root.worldToLocal(pos.clone());
+      if (local.x >= b.minX && local.x <= b.maxX && local.z >= b.minZ && local.z <= b.maxZ && Math.abs(local.y - b.floorY) < 4) return id;
+    }
+    return null;
+  }
+  function kineticFieldInfo() {
+    const mode = getControlMode();
+    if (mode === "jetpack") return { active: true, canLaunch: false, reason: "already flying" };
+    if (mode !== "walk") return { active: false, canLaunch: false, reason: "Kinetic Field is available on foot only" };
+    if (stationInteriorMode && stationWalkRoot) {
+      const bounds = stationWalkRoot.userData && stationWalkRoot.userData.walkBounds;
+      const explicit = !!(bounds && Number.isFinite(bounds.launchX) && bounds.launchX > -900);
+      const launchX = explicit ? bounds.launchX : (stationWalkRoot === lastStopDinerRef ? 38 : null);
+      if (launchX !== null) {
+        const local = stationWalkRoot.worldToLocal(playerAvatar.position.clone());
+        if (local.x < launchX) return { active: false, canLaunch: false, reason: "walk out to the space dock to launch", gate: { launchX, currentX: roundTo(local.x, 1) } };
+      }
+    }
+    return { active: false, canLaunch: true };
+  }
+
   function describeLocation() {
     let station = null;
     if (onFoot && stationInteriorMode && stationWalkRoot) {
@@ -6821,7 +6946,8 @@
     }
     const gravity = pos ? queryGravityField(pos) : null;
     return {
-      station, surfaceBody: station ? null : (onFoot ? (activeSurfaceBody === "moon" ? "luna" : "haven") : null),
+      station, structure: (onFoot && playerAvatar) ? describeStructure(playerAvatar.position) : null,
+      surfaceBody: station ? null : (onFoot ? (activeSurfaceBody === "moon" ? "luna" : "haven") : null),
       nearestBody: nearest, bodies, gravityMS2: gravity ? roundTo(gravity.magnitude, 2) : 0, gravityField: gravity ? gravity.id : null
     };
   }
@@ -6853,6 +6979,10 @@
       } : null,
       rover: havenBuggy ? { driving: buggyMode, occupants: Array.from(havenBuggy.userData.occupants ? havenBuggy.userData.occupants.values() : []).map(o => ({ id: o.id, type: o.type, label: o.label, slot: o.slot })) } : null,
       nearby: nearbyEntities(frame, 160, 14),
+      destinations: destinationsList(frame),
+      events: statusLog.slice(-12),
+      kineticField: kineticFieldInfo(),
+      control: controlOwnerInfo(),
       inventory: ranchGame.inventory.map(x => ({ ...x })), credits: ranchGame.credits, quests: ranchGame.quests.map(x => ({ ...x })),
       equipment: { rayGun: { shots: explorerEquipment.shots, hits: explorerEquipment.hits }, jetpackThrusting: explorerEquipment.thrusting },
       actions: listActions(false).map(a => a.name),
@@ -6877,7 +7007,9 @@
           "intent is applied for `hold` ms (default 800), then expires, so an idle agent never runs away.",
           "wait (ms, max 10000) pauses before the returned state snapshot; hold implies wait.",
           "character claims a roster character (human, agent or script controllers); the local avatar becomes that character.",
-          "Every call returns { ok, state } where state is the same JSON as KeplerReach.state()."
+          "Every call returns { ok, state } where state is the same JSON as KeplerReach.state().",
+          "state.destinations lists every curated landing site/dock with position, distance, bearing and how to reach it; state.events is the recent HUD message log; state.kineticField says whether you can launch here and why not; state.location.structure names the structure you are standing on.",
+          "Claiming a character as 'agent' or 'script' locks the local human's movement input; it is handed back automatically after 20 s without agent input, or immediately with KeplerReach.characters.reclaim()."
         ]
       }
     };
@@ -6949,11 +7081,14 @@
       get active() { return characterSummary(); },
       claim: claimCharacter,
       release: releaseCharacter,
+      handoff: handoffCharacter,
+      reclaim(opts) { return handoffCharacter("human", opts); },
       register: registerCharacter,
       bindUsername,
       autoClaim: autoClaimCharacter
     },
     registerControllable,
+    events() { return statusLog.slice(); },
     spacecraft:{get parked(){return shipParked;},brake:brakeShip,park(value){return setShipParked(value===undefined?true:!!value);}},
     physics:{
       model:"shared-body-mass-gravity-field-collision-boundary-and-support-surface-framework",
