@@ -10,7 +10,7 @@
   // Renderer: Three.js r160 / WebGL
   //
   // FEATURES
-  // - v0.4.06: Kinetic Field transports attitude through the complete rotating directional-gravity frame; world-space flight remains inertial
+  // - v0.4.06: Kinetic Field transports attitude through the complete rotating directional-gravity frame; flight position remains uncarried by station roots
   // - Procedural starfield
   // - Procedural low-poly planet
   // - Dynamic vehicle occupants and cargo slots
