@@ -11071,7 +11071,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
       const moisture=THREE.MathUtils.clamp(Number(climate.moistureIndex)||0,0,1);
       const temperature=THREE.MathUtils.clamp(Number(climate.temperatureIndex)||0,0,1);
       const base=THREE.MathUtils.clamp(0.18+moisture*0.48+temperature*0.22,0.08,0.92);
-      state={schema:"kepler-planetary-ecoregion/1",regionId,body:"haven",biome:climate.biome,
+      state={schema:"kepler-planetary-ecoregion/2",regionId,body:"haven",biome:climate.biome,
         vegetationBiomass:Number(base.toFixed(4)),soilMoisture:Number(THREE.MathUtils.clamp(0.16+moisture*0.68,0,1).toFixed(4)),
         soilNutrients:Number(THREE.MathUtils.clamp(0.38+moisture*0.24,0.2,0.78).toFixed(4)),organicMatter:0.08,
         ecologicalHealth:Number(base.toFixed(4)),lastStepAt:null,totalSimulatedHours:0,steps:0};
@@ -11393,7 +11393,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
     const nutrientCycle=advanceRegionalNutrientCycle(state,elapsedHours,feeding,wildlife,growth);
     const resourceRegrowth=advanceRegionalResourceRegrowth(context.regionId,elapsedHours,state);
     const food=regionalWildlifeFood(context.regionId);
-    return {schema:"kepler-planetary-ecology-step/6",available:true,regionId:context.regionId,elapsedHours,biome:context.climate.biome,wildlifeCount,food,feeding,wildlife,nutrientCycle,resourceRegrowth,productivity:Number(productivity.toFixed(3)),changes:{vegetationGrowth:Number(growth.toFixed(4)),grazingPressure:Number(grazingPressure.toFixed(4)),waterInput:Number(waterInput.toFixed(4)),evapotranspiration:Number(evapotranspiration.toFixed(4)),soilNutrients:Number((state.soilNutrients-soilNutrients).toFixed(5)),organicMatter:Number((state.organicMatter-0.08).toFixed(5))},state:{...state},visual,limits:{regionalCell:"30-degree geographic region",maximumStepHours:24,clock:"explicit caller-supplied time",visualChanges:"foliage color responds to regional biomass and soil moisture; terrain geometry and plant counts remain unchanged",populationChanges:"same-species pairing, 72-hour gestation, live offspring and starvation-related mortality are processed only during explicit simulation steps",nutrientModel:"regional organic-matter and soil-nutrient proxy; not a chemical soil simulation",waterModel:"regional soil-moisture proxy, not fluid simulation"}};
+    return {schema:"kepler-planetary-ecology-step/6",available:true,regionId:context.regionId,elapsedHours,biome:context.climate.biome,wildlifeCount,food,feeding,wildlife,nutrientCycle,resourceRegrowth,productivity:Number(productivity.toFixed(3)),changes:{vegetationGrowth:Number(growth.toFixed(4)),grazingPressure:Number(grazingPressure.toFixed(4)),waterInput:Number(waterInput.toFixed(4)),evapotranspiration:Number(evapotranspiration.toFixed(4)),soilNutrients:Number(state.soilNutrients.toFixed(4)),organicMatter:Number(state.organicMatter.toFixed(4))},state:{...state},visual,limits:{regionalCell:"30-degree geographic region",maximumStepHours:24,clock:"explicit caller-supplied time",visualChanges:"foliage color responds to regional biomass and soil moisture; terrain geometry and plant counts remain unchanged",populationChanges:"same-species pairing, 72-hour gestation, live offspring and starvation-related mortality are processed only during explicit simulation steps",nutrientModel:"regional organic-matter and soil-nutrient proxy; not a chemical soil simulation",waterModel:"regional soil-moisture proxy, not fluid simulation"}};
   }
 
   window.KeplerReach = {
