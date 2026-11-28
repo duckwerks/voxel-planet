@@ -5314,6 +5314,20 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
         tail.rotation.x = Math.PI / 2;
         tail.scale.set(0.3, 0.72, 0.3);
         group.add(tail);
+        if(kind==="stalker") {
+          // A low dorsal ridge gives the predator a silhouette distinct
+          // from the existing herbivore model without changing locomotion.
+          for(let spine=0;spine<4;spine++) {
+            const dorsal=new THREE.Mesh(new THREE.ConeGeometry(0.22,0.62,5),faunaMaterials[1]);
+            dorsal.position.set(0,1.48,-0.48+spine*0.42);
+            dorsal.rotation.x=Math.PI;
+            group.add(dorsal);
+          }
+          const jaw=new THREE.Mesh(new THREE.ConeGeometry(0.12,0.34,5),faunaDark);
+          jaw.position.set(0,0.88,1.52);
+          jaw.rotation.x=Math.PI/2;
+          group.add(jaw);
+        }
       }
 
       // Fauna are small, articulated groups whose child bounds can be stale or
@@ -8617,6 +8631,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
         species:creature.kind,
         behavior:creature.state||"wandering",
         feedingResourceId:creature.feedingResourceId||null,
+        predator:creature.predatorObservation?{...creature.predatorObservation}:null,
         needs:creature.ecologyNeeds?{...creature.ecologyNeeds}:null,
         released:!!faunaReleased,
         position:position.toArray(),
