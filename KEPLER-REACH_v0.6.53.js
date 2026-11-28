@@ -8603,7 +8603,21 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
             creature.fleeingUntilS=seconds+1.1;
             creature.herdObservation={alarm:seconds<(creature.herdAlarmUntilS||0),membersNearby:herdCount,cohesion:cohesion.lengthSq()>1e-6,separation:separation.lengthSq()>1e-6,routeScore:Number(bestScore.toFixed(3)),threatId:creature.herdThreatId||null};
           } else {
-            creature.herdObservation={alarm:false,membersNearby:herd.filter(member=>anchor.distanceTo(member.locomotion.position)<20).length,cohesion:false,separation:false,routeScore:null,threatId:null};
+            let cohesion=new THREE.Vector3(),separation=new THREE.Vector3(),membersNearby=0;
+            for(const member of herd) {
+              const delta=member.locomotion.position.clone().sub(anchor),distance=delta.length();
+              if(distance>20||distance<1e-4)continue;
+              delta.addScaledVector(normal,-delta.dot(normal));
+              cohesion.add(delta);
+              if(distance<4.2)separation.addScaledVector(delta.normalize(),-((4.2-distance)/4.2));
+              membersNearby++;
+            }
+            if(cohesion.lengthSq()>1e-6)cohesion.addScaledVector(normal,-cohesion.dot(normal)).normalize();
+            if(separation.lengthSq()>1e-6)separation.addScaledVector(normal,-separation.dot(normal)).normalize();
+            // Mild everyday cohesion keeps grazers and hoppers in loose groups;
+            // separation prevents the group from collapsing into one point.
+            desiredLocal.addScaledVector(cohesion,0.12).addScaledVector(separation,0.22);
+            creature.herdObservation={alarm:false,membersNearby,cohesion:cohesion.lengthSq()>1e-6,separation:separation.lengthSq()>1e-6,routeScore:null,threatId:null};
           }
         }
         if(creature.kind==="grazer"||creature.kind==="hopper"){
