@@ -274,13 +274,18 @@
   }
   function refreshWorldEntities(options={}) {
     const kind=options.kind?String(options.kind):null,tag=options.tag?String(options.tag):null;
-    let refreshed=0;
+    let refreshed=0,changed=0;
     for(const e of worldEntities.values()){
       if(kind&&e.kind!==kind)continue;
       if(tag&&!e.tags.includes(tag))continue;
-      syncWorldEntity(e);refreshed++;
+      const before=e.transform?JSON.stringify(e.transform):"";
+      syncWorldEntity(e);
+      const after=e.transform?JSON.stringify(e.transform):"";
+      if(before!==after)changed++;
+      refreshed++;
     }
-    return {schema:WORLD_SCHEMA_VERSION,revision:worldRevision,refreshed,entityCount:worldEntities.size};
+    if(changed)worldRevision++;
+    return {schema:WORLD_SCHEMA_VERSION,revision:worldRevision,refreshed,changed,entityCount:worldEntities.size};
   }
   function removeWorldEntity(id) {
     const k=String(id),e=worldEntities.get(k);if(!e)return false;
