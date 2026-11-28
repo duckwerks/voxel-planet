@@ -8750,8 +8750,8 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
       get supportSurfaces(){return walkableSurfaces.map(o=>({id:o.userData.krWalkableSurface,name:o.name||"",visible:o.visible}));},
       get collisionDiagnostics(){
         const stats={...solidCollisionStats};
-        stats.worldColliderEntities=worldEntities.size?queryWorldEntities({tag:"collision",limit:5000}).length:0;
-        stats.worldWalkableEntities=queryWorldEntities({tag:"walkable",limit:5000}).length;
+        stats.worldColliderEntities=Array.from(worldEntities.values()).filter(e=>e.lifecycle==="active"&&e.tags.includes("collision")).length;
+        stats.worldWalkableEntities=Array.from(worldEntities.values()).filter(e=>e.lifecycle==="active"&&e.tags.includes("walkable")).length;
         return {
           frame:solidFrame,cellSize:SOLID_SPATIAL_CELL_SIZE,
           maxCellsPerCollider:SOLID_SPATIAL_MAX_CELLS_PER_COLLIDER,
