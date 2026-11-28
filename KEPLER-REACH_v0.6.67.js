@@ -1331,10 +1331,21 @@
     const wood=new THREE.MeshStandardMaterial({color:0x765039,roughness:0.96});
     const soil=new THREE.MeshStandardMaterial({color:0x493b2d,roughness:1});
     const positions=[[-9,24],[0,24],[9,24],[-9,33],[0,33],[9,33]];
+    const siteUp=southSaloonRef.position.clone().normalize();
+    const siteEast=new THREE.Vector3(1,0,0).applyQuaternion(southSaloonRef.quaternion).normalize();
+    const siteNorth=new THREE.Vector3(0,0,1).applyQuaternion(southSaloonRef.quaternion).normalize();
+    const surfaceUp=new THREE.Vector3(0,1,0);
     definitions.forEach((definition,index)=>{
       const bed=new THREE.Group();
       bed.name="KR_RANCH_CULTIVATION_"+definition.id.toUpperCase().replace(/-/g,"_");
-      bed.position.set(positions[index][0],0.08,positions[index][1]);
+      const tangent=siteEast.clone().multiplyScalar(positions[index][0]).addScaledVector(siteNorth,positions[index][1]);
+      const radial=siteUp.clone().addScaledVector(tangent,1/CONFIG.planetRadius).normalize();
+      const terrain=terrainProfile(radial.x,radial.y,radial.z);
+      const surfacePoint=radial.clone().multiplyScalar(CONFIG.planetRadius+terrain.elevation+0.16);
+      const parent=southSaloonRef.parent;
+      const localPoint=southSaloonRef.worldToLocal(parent.localToWorld(surfacePoint));
+      bed.position.copy(localPoint);
+      bed.quaternion.copy(southSaloonRef.quaternion.clone().invert().multiply(new THREE.Quaternion().setFromUnitVectors(surfaceUp,radial)));
       const base=new THREE.Mesh(new THREE.BoxGeometry(7.4,0.24,5.8),soil);
       base.position.y=0.22;base.receiveShadow=true;bed.add(base);
       const boards=[[7.7,0.38,0.24,0,0.36,-2.9],[7.7,0.38,0.24,0,0.36,2.9],[0.24,0.38,5.8,-3.73,0.36,0],[0.24,0.38,5.8,3.73,0.36,0]];
