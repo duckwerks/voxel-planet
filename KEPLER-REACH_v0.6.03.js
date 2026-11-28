@@ -5947,7 +5947,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
     playerAvatar.traverse(obj => {
       if (!obj.isMesh && !obj.isGroup) return;
       // Keep equipment, jetpack FX, and the George root visible
-      if (obj.name === "KR_GEORGE_ROOT" || obj.name === "KR_FRONTIER_RAY_GUN") return;
+      if (obj.name === "KR_GEORGE_ROOT" || obj.name === "KR_TRASH_CAN_ROBOT_ROOT" || obj.name === "KR_FRONTIER_RAY_GUN") return;
       if (obj.parent && obj.parent.name === "KR_FRONTIER_RAY_GUN") return;
       if (playerAvatar.userData.jetpackFlames && playerAvatar.userData.jetpackFlames.includes(obj)) return;
       // Hide only meshes that were part of the procedural body (no name or suit pieces)
@@ -5955,7 +5955,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
         obj.visible = !hide;
       }
       // Also hide limb group children of procedural arms/legs
-      if (obj.isGroup && obj.parent === playerAvatar && obj.name !== "KR_GEORGE_ROOT") {
+      if (obj.isGroup && obj.parent === playerAvatar && obj.name !== "KR_GEORGE_ROOT" && obj.name !== "KR_TRASH_CAN_ROBOT_ROOT") {
         // limb groups are unnamed; George root is named
         let isEquip = false;
         obj.traverse(c => { if (c.name === "KR_FRONTIER_RAY_GUN") isEquip = true; });
@@ -6182,7 +6182,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
     if(requested==="trash-can"&&!trashCanExplorer){
       refreshExplorerSelectorUI();setStatus("LOADING TRASH-CAN ROBOT // KEEPING CURRENT CONTROLS");
       const loaded=await loadTrashCanExplorer();
-      if(!loaded){activeExplorerCharacter="george";refreshExplorerSelectorUI();if(georgeExplorer&&georgeExplorer.root)georgeExplorer.root.visible=true;hideProceduralSuitMeshes(!georgeExplorer);return false;}
+      if(!loaded){activeExplorerCharacter="george";refreshExplorerSelectorUI();if(georgeExplorer&&georgeExplorer.root)georgeExplorer.root.visible=true;hideProceduralSuitMeshes(!!georgeExplorer);return false;}
     }
     if(requested==="george"&&!georgeExplorer){
       try{await loadGeorgeExplorer();}catch(err){console.warn("[Kepler Reach] George selection load failed",err);}
