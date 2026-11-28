@@ -10928,7 +10928,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
     const plants=residents.filter(item=>item.metadata&&item.metadata.category==="flora");
     const animals=residents.filter(item=>item.metadata&&item.metadata.category==="fauna");
     const avg=items=>items.length?Number((items.reduce((sum,item)=>sum+Number(item.state&&item.state.biomass||0),0)/items.length).toFixed(3)):null;
-    return {schema:"kepler-ecosystem-state/1",habitatId,plants:{count:plants.length,averageBiomass:avg(plants)},animals:animals.map(item=>({id:item.id,species:item.metadata&&item.metadata.species,hunger:Number(item.state&&item.state.hunger||0),energy:Number(item.state&&item.state.energy||1),lastFeedingStep:!!(item.state&&item.state.lastFeedingStep)}))};
+    return {schema:"kepler-ecosystem-state/2",habitatId,environment:(()=>{const h=getWorldEntity(habitatId);return h?habitatEnvironmentSnapshot(h):null;})(),plants:{count:plants.length,averageBiomass:avg(plants)},animals:animals.map(item=>({id:item.id,species:item.metadata&&item.metadata.species,hunger:Number(item.state&&item.state.hunger||0),energy:Number(item.state&&item.state.energy||1),lastFeedingStep:!!(item.state&&item.state.lastFeedingStep)}))};
   }
 
   // ============================================================
@@ -11059,7 +11059,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
           const count=category=>residents.filter(item=>item.metadata&&item.metadata.category===category).length;
           return {habitatId:id,total:residents.length,flora:count("flora"),fauna:count("fauna"),staff:count("staff"),residentIds:residents.map(item=>item.id)};
         },
-        describe() { return {schema:"kepler-ecological-habitats/4",types:["enclosed-geodesic-biodome"],residentKinds:["flora","fauna","staff"],features:["stable resident IDs","parent habitat membership","world-space live resident positions","population snapshots","live proximity-based food-web opportunities","explicit-step plant biomass regeneration","proximity-based herbivore feeding","resident hunger and energy state","controllable temperature, light, water reserve and air quality","environment-dependent plant growth and animal hydration/health"],note:"Ecology advances only when simulate() is called with positive elapsedHours; no background timer, reproduction, mortality, visual growth, or full atmospheric/weather simulation."}; }
+        describe() { return {schema:"kepler-ecological-habitats/5",types:["enclosed-geodesic-biodome"],residentKinds:["flora","fauna","staff"],features:["stable resident IDs","parent habitat membership","world-space live resident positions","population snapshots","live proximity-based food-web opportunities","explicit-step plant biomass regeneration","proximity-based herbivore feeding","resident hunger and energy state","controllable temperature, light, water reserve and air quality","environment-dependent plant growth and animal hydration/health"],note:"Ecology advances only when simulate() is called with positive elapsedHours; no background timer, reproduction, mortality, visual growth, or full atmospheric/weather simulation."}; }
       },
       resources: {
         list: ecologyResourceSnapshot,
