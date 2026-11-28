@@ -6082,16 +6082,6 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
     // Keep the original procedural spaceman available as a selectable avatar.
     hideProceduralSuitMeshes(activeExplorerCharacter!=="original");
 
-    // Keep ray gun visible: find it and lift to hand height approx
-    if (explorerEquipment.gun) {
-      explorerEquipment.gun.visible = true;
-      // Approximate right-hand hold for a T-pose / A-pose character
-      explorerEquipment.gun.position.set(0.35, 1.05, 0.15);
-      if (explorerEquipment.gun.parent && explorerEquipment.gun.parent !== playerAvatar) {
-        playerAvatar.attach(explorerEquipment.gun);
-      }
-    }
-
     // Mixer for embedded clips
     let mixer = null;
     const clips = gltf.animations || [];
@@ -6272,8 +6262,8 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
     if(requested==="original"){
       restoreProceduralExplorerGun();hideProceduralSuitMeshes(false);
     }else{
-      hideProceduralSuitMeshes(true);
       attachExplorerGunToImportedModel(requested==="george"?georgeExplorer&&georgeExplorer.root:trashCanExplorer&&trashCanExplorer.root);
+      hideProceduralSuitMeshes(true);
     }
     refreshExplorerSelectorUI();
     setStatus(requested==="trash-can"?"TRASH-CAN ROBOT SELECTED // EXPLORER CONTROLS ONLINE":requested==="george"?"GEORGE-2077 SELECTED // EXPLORER CONTROLS ONLINE":"ORIGINAL SPACEMAN SELECTED // EXPLORER CONTROLS ONLINE");
