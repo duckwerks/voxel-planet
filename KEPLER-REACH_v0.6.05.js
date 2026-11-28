@@ -3,14 +3,14 @@
   "use strict";
 
   // ============================================================
-  // KEPLER REACH 0.6.06
+  // KEPLER REACH 0.6.05
   // Procedural 3D Universe for CyTube
   //
   // Author: Elwood Edwards
   // Renderer: Three.js r160 / WebGL
   //
   // FEATURES
-  // - v0.6.06: George Mixamo shoulder-chain correction aligns hands down beside torso; restrained procedural walk swing\n  // - v0.6.05: Three selectable explorers; original spaceman is default and fully restorable
+  // - v0.6.05: George Mixamo shoulder-chain correction aligns hands down beside torso; restrained procedural walk swing\n  // - v0.6.05: Three selectable explorers; original spaceman is default and fully restorable
   // - v0.6.05: Imported explorers receive model-relative ray-gun placement; George arm-pose fallback improved
   // - v0.6.04: Selectable Trash-Can Robot explorer; lazy GLB load, shared controller/equipment, normalized scale and procedural gait
   // - v0.6.03: Explorer selector HUD; George remains default and can be restored at any time
@@ -109,7 +109,7 @@
   }
 
   const CONFIG = {
-    version: "0.6.06",
+    version: "0.6.05",
     seed: 847291,
     threeVersion: "0.160.0",
 
