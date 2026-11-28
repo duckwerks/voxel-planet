@@ -10,7 +10,7 @@
   // Renderer: Three.js r160 / WebGL
   //
   // FEATURES
-  // - v0.6.05: George Mixamo shoulder-chain correction aligns hands down beside torso; restrained procedural walk swing\n  // - v0.6.05: Three selectable explorers; original spaceman is default and fully restorable
+  // - v0.6.05: Three selectable explorers; original spaceman is default and fully restorable
   // - v0.6.05: Imported explorers receive model-relative ray-gun placement; George arm-pose fallback improved
   // - v0.6.04: Selectable Trash-Can Robot explorer; lazy GLB load, shared controller/equipment, normalized scale and procedural gait
   // - v0.6.03: Explorer selector HUD; George remains default and can be restored at any time
@@ -6104,7 +6104,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
     }
 
     // Collect bones for a lightweight procedural walk if clips are missing
-    const bones = { hips: null, spine: null, leftUpLeg: null, rightUpLeg: null, leftLeg: null, rightLeg: null, leftArm: null, rightArm: null, leftShoulder: null, rightShoulder: null, leftHand: null, rightHand: null };
+    const bones = { hips: null, spine: null, leftUpLeg: null, rightUpLeg: null, leftLeg: null, rightLeg: null, leftArm: null, rightArm: null, leftShoulder: null, rightShoulder: null };
     root.traverse(o => {
       if (!o.isBone && o.type !== "Bone") return;
       const n = String(o.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -6121,8 +6121,6 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
       assign("rightShoulder", n => R(n) && n.includes("shoulder"));
       assign("leftArm", n => L(n) && (n.includes("upperarm") || n.includes("arm")) && !n.includes("fore") && !n.includes("hand"));
       assign("rightArm", n => R(n) && (n.includes("upperarm") || n.includes("arm")) && !n.includes("fore") && !n.includes("hand"));
-      assign("leftHand", n => L(n) && n.includes("hand") && !n.includes("thumb") && !n.includes("index") && !n.includes("middle") && !n.includes("ring") && !n.includes("pinky"));
-      assign("rightHand", n => R(n) && n.includes("hand") && !n.includes("thumb") && !n.includes("index") && !n.includes("middle") && !n.includes("ring") && !n.includes("pinky"));
     });
     // Some GLB exporters use opaque bone names. Infer missing upper-arm pivots
     // from bone positions relative to the character's actual bounds.
@@ -6143,40 +6141,48 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
         if(choice)bones[side+"Arm"]=choice.bone;
       }
     }
-    // Store the imported rest pose for the shoulder/upper-arm chain.
-    // George's source GLB has a Mixamo T-pose: the shoulder bones themselves
-    // carry the raised-arm orientation. Rotate each shoulder as a whole so
-    // the hand-to-shoulder vector points down beside the torso.
+    // Store rest rotations, then calculate a real "arms-down" correction
+    // from the actual skeleton geometry. Do not assume the model uses a
+    // particular local bone axis or left/right rotation sign.
     const boneRest = {};
     for (const [k, b] of Object.entries(bones)) {
       if (b) boneRest[k] = { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z };
     }
-    const shoulderDownPose = {};
-    root.updateWorldMatrix(true, true);
-    for (const side of ["left", "right"]) {
-      const shoulder = bones[side + "Shoulder"];
-      const hand = bones[side + "Hand"];
-      if (!shoulder || !hand || !shoulder.parent) continue;
-      const pivot = shoulder.getWorldPosition(new THREE.Vector3());
-      const handPoint = hand.getWorldPosition(new THREE.Vector3());
-      const armVector = handPoint.sub(pivot);
-      if (armVector.lengthSq() < 1e-8) continue;
-
-      const sideSign = side === "left" ? -1 : 1;
-      const rootOrigin = root.localToWorld(new THREE.Vector3(0, 0, 0));
-      const targetPoint = root.localToWorld(new THREE.Vector3(sideSign * 0.14, -1, 0));
-      const targetDirection = targetPoint.sub(rootOrigin).normalize();
-      const worldDelta = new THREE.Quaternion().setFromUnitVectors(
-        armVector.normalize(), targetDirection
-      );
-      const currentWorldQ = shoulder.getWorldQuaternion(new THREE.Quaternion());
-      const desiredWorldQ = worldDelta.multiply(currentWorldQ);
-      const parentWorldQ = shoulder.parent.getWorldQuaternion(new THREE.Quaternion());
-      const desiredLocalQ = parentWorldQ.invert().multiply(desiredWorldQ).normalize();
-      shoulderDownPose[side] = {
-        x: desiredLocalQ.x, y: desiredLocalQ.y,
-        z: desiredLocalQ.z, w: desiredLocalQ.w
+    const armDownPose={};
+    root.updateWorldMatrix(true,true);
+    for(const key of ["leftArm","rightArm"]){
+      const arm=bones[key],rest=boneRest[key];
+      if(!arm||!rest)continue;
+      let endpoint=null,bestDistance=-1;
+      const shoulder=arm.getWorldPosition(new THREE.Vector3());
+      const findDescendants=(node)=>{
+        for(const child of node.children||[]){
+          if(child.isBone||child.type==="Bone"){
+            const p=child.getWorldPosition(new THREE.Vector3()),d=p.distanceTo(shoulder);
+            if(d>bestDistance){bestDistance=d;endpoint=child;}
+          }
+          findDescendants(child);
+        }
       };
+      findDescendants(arm);
+      if(!endpoint)continue;
+      const endBefore=endpoint.getWorldPosition(new THREE.Vector3());
+      const restY=endBefore.y;
+      let best=null,bestY=Infinity;
+      const axes=["x","y","z"],angles=[-1.65,-1.35,-1.05,-0.75,0.75,1.05,1.35,1.65];
+      for(const axis of axes){
+        for(const angle of angles){
+          arm.rotation.set(rest.x,rest.y,rest.z);
+          arm.rotation[axis]+=angle;
+          root.updateWorldMatrix(true,true);
+          const y=endpoint.getWorldPosition(new THREE.Vector3()).y;
+          if(y<bestY){bestY=y;best={axis,angle};}
+        }
+      }
+      arm.rotation.set(rest.x,rest.y,rest.z);
+      root.updateWorldMatrix(true,true);
+      // Accept a correction only when it materially lowers the arm endpoint.
+      if(best&&bestY<restY-bestDistance*0.18)armDownPose[key]=best;
     }
     // Imported clips repeatedly reset the shoulder transforms and were the
     // reason the previous overlay could not reliably hold George's arms down.
@@ -6191,7 +6197,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
       walkAction,
       bones,
       boneRest,
-      shoulderDownPose,
+      armDownPose,
       ready: true
     };
     playerAvatar.userData.george = georgeExplorer;
@@ -6348,23 +6354,21 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
           b.rotation.y = rest[key].y + (dy || 0);
           b.rotation.z = rest[key].z + (dz || 0);
         };
-        const shoulderPose = georgeExplorer.shoulderDownPose || {};
-        const applyArmDown = (side, swing) => {
-          const shoulder = bones[side + "Shoulder"];
-          const arm = bones[side + "Arm"];
-          const pose = shoulderPose[side];
-          const armRest = rest[side + "Arm"];
-          if (shoulder && pose) {
-            shoulder.quaternion.set(pose.x, pose.y, pose.z, pose.w);
-          }
-          if (arm && armRest) {
-            arm.rotation.set(armRest.x, armRest.y, armRest.z);
-            // Restrained opposing swing around the arm's local X axis.
-            arm.rotation.x += swing;
-          }
+        const armPose=georgeExplorer.armDownPose||{};
+        const applyArmDown=(key,swing)=>{
+          const b=bones[key],r=rest[key],pose=armPose[key];
+          if(!b||!r)return;
+          b.rotation.set(r.x,r.y,r.z);
+          if(pose)b.rotation[pose.axis]+=pose.angle;
+          // Small opposing forward/back swing, around an axis other than the
+          // one used to lower the arm, so the arm remains hanging beside him.
+          const swingAxis=pose?(pose.axis==="x"?"z":"x"):"z";
+          b.rotation[swingAxis]+=swing;
         };
-        applyArmDown("left", walking ? -Math.sin(time * 0.012) * 0.10 : 0);
-        applyArmDown("right", walking ? Math.sin(time * 0.012) * 0.10 : 0);
+        applyArmDown("leftArm",walking?-Math.sin(time*0.012)*0.20:0);
+        applyArmDown("rightArm",walking?Math.sin(time*0.012)*0.20:0);
+        // Shoulder rest pose is preserved; avoid a fixed shoulder twist that
+        // can rotate an otherwise correctly lowered arm back outward.
 
         if (walking) {
           const t = time * 0.012;
