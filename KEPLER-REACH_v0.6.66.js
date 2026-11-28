@@ -1267,7 +1267,9 @@
     // Per-capita settlement use rates, in stock units per simulated hour.
     consumptionRates: Object.freeze({"medicinal-herb":0.004,"wild-berries":0.035,"tree-resin":0.002}),
     fractionalUse: new Map(),
+    productionFraction: new Map(),
     unmetDemand: new Map(),
+    lastProduction: null,
     totalSimulatedHours: 0,
     lastCycle: null,
     lastTrade: null
@@ -1335,9 +1337,9 @@
     const nutrients=THREE.MathUtils.clamp(Number(state.soilNutrients)||0,0,1);
     const fertility=THREE.MathUtils.clamp(0.25+biomass*0.45+moisture*0.2+nutrients*0.1,0,1);
     const recipes={
-      "medicinal-herb":{rate:0.018,biomassCost:0.0018,organicCost:0.00035},
-      "wild-berries":{rate:0.032,biomassCost:0.0012,organicCost:0.00025},
-      "tree-resin":{rate:0.009,biomassCost:0.0024,organicCost:0.00045}
+      "medicinal-herb":{rate:0.08,biomassCost:0.0018,organicCost:0.00035},
+      "wild-berries":{rate:0.14,biomassCost:0.0012,organicCost:0.00025},
+      "tree-resin":{rate:0.045,biomassCost:0.0024,organicCost:0.00045}
     };
     const items=[];
     let produced=0,biomassUsed=0,organicUsed=0;
