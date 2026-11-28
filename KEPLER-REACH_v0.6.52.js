@@ -8534,7 +8534,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
             const targetTerrain=terrainProfile(targetDirection.x,targetDirection.y,targetDirection.z);
             desiredLocal.copy(targetDirection.multiplyScalar(CONFIG.planetRadius+targetTerrain.elevation+0.08));
             normal=predatorTarget.locomotion.position.clone().normalize();
-            creature.state=predatorDistance<=3.6?"pouncing":"pursuing";
+            creature.state=predatorDistance<=3.6&&seconds<(creature.pounceUntilS||0)?"pouncing":"pursuing";
             creature.predatorObservation={role:"predator",state:creature.state,targetId:predatorTarget.id,targetDistanceM:Number(predatorDistance.toFixed(2)),huntingCooldownHours:creature.huntingCooldownHours||0};
             if(predatorDistance<=3.6&&(creature.pounceUntilS||0)<seconds&&seconds>=(creature.pounceCooldownUntilS||0)) {
               creature.pounceUntilS=seconds+0.62;
@@ -8567,7 +8567,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
             const distance=anchor.distanceTo(resource.object.position);
             if(distance<feedingDistance&&distance<28){feedingDistance=distance;feedingTarget=resource;}
           }
-          if(feedingTarget&&seconds>=(creature.startledUntilS||0)){
+          if(!preyThreat&&feedingTarget&&seconds>=(creature.startledUntilS||0)){
             if(feedingDistance<=2.15){
               desiredLocal.copy(anchor);
               creature.state="feeding";
@@ -8579,7 +8579,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
               creature.state="seeking-food";
               creature.feedingResourceId=feedingTarget.id;
             }
-          }else creature.feedingResourceId=null;
+          }else if(!preyThreat)creature.feedingResourceId=null;
         }
         // Use a persistent, unanimated locomotion anchor. Visual bobbing is
         // applied afterward as an absolute offset, never accumulated into the
