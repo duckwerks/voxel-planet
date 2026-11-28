@@ -11706,8 +11706,8 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
               land:surface.land,
               landform:surface.landform,
               feature:surface.feature,
-              slope:surface.slope??null,
-              normal:surface.normal??null
+              slopeDegrees:surface.slopeDegrees??null,
+              normal:surface.terrainNormal??null
             },
             climate:surface.climate,
             sources:{
