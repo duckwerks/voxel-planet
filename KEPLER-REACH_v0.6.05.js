@@ -109,7 +109,7 @@
   }
 
   const CONFIG = {
-    version: "0.6.02",
+    version: "0.6.05",
     seed: 847291,
     threeVersion: "0.160.0",
 
