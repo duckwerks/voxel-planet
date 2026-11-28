@@ -6086,7 +6086,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
     let mixer = null;
     const clips = gltf.animations || [];
     let idleAction = null, walkAction = null;
-    if (clips.length && THREE.AnimationMixer) {
+    if (false && clips.length && THREE.AnimationMixer) {
       mixer = new THREE.AnimationMixer(root);
       const byName = {};
       for (const c of clips) byName[String(c.name || "").toLowerCase()] = c;
@@ -6141,11 +6141,53 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
         if(choice)bones[side+"Arm"]=choice.bone;
       }
     }
-    // Store rest rotations for procedural overlay
+    // Store rest rotations, then calculate a real "arms-down" correction
+    // from the actual skeleton geometry. Do not assume the model uses a
+    // particular local bone axis or left/right rotation sign.
     const boneRest = {};
     for (const [k, b] of Object.entries(bones)) {
       if (b) boneRest[k] = { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z };
     }
+    const armDownPose={};
+    root.updateWorldMatrix(true,true);
+    for(const key of ["leftArm","rightArm"]){
+      const arm=bones[key],rest=boneRest[key];
+      if(!arm||!rest)continue;
+      let endpoint=null,bestDistance=-1;
+      const shoulder=arm.getWorldPosition(new THREE.Vector3());
+      const findDescendants=(node)=>{
+        for(const child of node.children||[]){
+          if(child.isBone||child.type==="Bone"){
+            const p=child.getWorldPosition(new THREE.Vector3()),d=p.distanceTo(shoulder);
+            if(d>bestDistance){bestDistance=d;endpoint=child;}
+          }
+          findDescendants(child);
+        }
+      };
+      findDescendants(arm);
+      if(!endpoint)continue;
+      const endBefore=endpoint.getWorldPosition(new THREE.Vector3());
+      const restY=endBefore.y;
+      let best=null,bestY=Infinity;
+      const axes=["x","y","z"],angles=[-1.65,-1.35,-1.05,-0.75,0.75,1.05,1.35,1.65];
+      for(const axis of axes){
+        for(const angle of angles){
+          arm.rotation.set(rest.x,rest.y,rest.z);
+          arm.rotation[axis]+=angle;
+          root.updateWorldMatrix(true,true);
+          const y=endpoint.getWorldPosition(new THREE.Vector3()).y;
+          if(y<bestY){bestY=y;best={axis,angle};}
+        }
+      }
+      arm.rotation.set(rest.x,rest.y,rest.z);
+      root.updateWorldMatrix(true,true);
+      // Accept a correction only when it materially lowers the arm endpoint.
+      if(best&&bestY<restY-bestDistance*0.18)armDownPose[key]=best;
+    }
+    // Imported clips repeatedly reset the shoulder transforms and were the
+    // reason the previous overlay could not reliably hold George's arms down.
+    // Use the game's deterministic procedural gait for George instead.
+    mixer=null;idleAction=null;walkAction=null;
 
     georgeExplorer = {
       root,
@@ -6155,6 +6197,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
       walkAction,
       bones,
       boneRest,
+      armDownPose,
       ready: true
     };
     playerAvatar.userData.george = georgeExplorer;
@@ -6305,19 +6348,27 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
         const rest = georgeExplorer.boneRest || {};
         const hasLegs = !!(bones.leftUpLeg || bones.rightUpLeg);
 
-        // T-pose → arms down: Mixamo-like upper arm Z (~±1.2 rad), shoulder assist
-        const ARM_DOWN = 1.15;
         const applyPose = (b, key, dx, dy, dz) => {
           if (!b || !rest[key]) return;
           b.rotation.x = rest[key].x + (dx || 0);
           b.rotation.y = rest[key].y + (dy || 0);
           b.rotation.z = rest[key].z + (dz || 0);
         };
-        // Always drop arms from T-pose (idle and walk)
-        applyPose(bones.leftArm, "leftArm", 0, 0, ARM_DOWN);
-        applyPose(bones.rightArm, "rightArm", 0, 0, -ARM_DOWN);
-        applyPose(bones.leftShoulder, "leftShoulder", 0, 0, 0.25);
-        applyPose(bones.rightShoulder, "rightShoulder", 0, 0, -0.25);
+        const armPose=georgeExplorer.armDownPose||{};
+        const applyArmDown=(key,swing)=>{
+          const b=bones[key],r=rest[key],pose=armPose[key];
+          if(!b||!r)return;
+          b.rotation.set(r.x,r.y,r.z);
+          if(pose)b.rotation[pose.axis]+=pose.angle;
+          // Small opposing forward/back swing, around an axis other than the
+          // one used to lower the arm, so the arm remains hanging beside him.
+          const swingAxis=pose?(pose.axis==="x"?"z":"x"):"z";
+          b.rotation[swingAxis]+=swing;
+        };
+        applyArmDown("leftArm",walking?-Math.sin(time*0.012)*0.20:0);
+        applyArmDown("rightArm",walking?Math.sin(time*0.012)*0.20:0);
+        // Shoulder rest pose is preserved; avoid a fixed shoulder twist that
+        // can rotate an otherwise correctly lowered arm back outward.
 
         if (walking) {
           const t = time * 0.012;
@@ -6333,9 +6384,7 @@ const active=!!(onFoot&&!buggyMode&&keys.space);explorerEquipment.thrusting=acti
             applyPose(bones.leftLeg, "leftLeg", -Math.max(0, swing) * 0.45, 0, 0);
             applyPose(bones.rightLeg, "rightLeg", -Math.max(0, -swing) * 0.45, 0, 0);
           }
-          // Arms hang down + natural walk swing (forward/back on X)
-          applyPose(bones.leftArm, "leftArm", -swing * 0.35, 0, ARM_DOWN);
-          applyPose(bones.rightArm, "rightArm", swing * 0.35, 0, -ARM_DOWN);
+          // Arm-down pose above already includes a restrained opposing swing.
           if (bones.spine && rest.spine) {
             bones.spine.rotation.y = rest.spine.y + swing * 0.06;
           }
